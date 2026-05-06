@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import cloudbase from "@cloudbase/js-sdk";
 
-const envId = import.meta.env.VITE_CLOUDBASE_ENV_ID || "rockdaddy-d6gpnau9f481fa35f";
+const envId = import.meta.env.VITE_CLOUDBASE_ENV_ID || "";
 
 // Use a flag to track if we have a valid environment
 export const isCloudBaseConfigured = !!envId && envId !== "placeholder-env-id" && envId.length > 5;

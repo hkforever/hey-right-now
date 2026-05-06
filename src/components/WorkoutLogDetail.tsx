@@ -99,7 +99,7 @@ export default function WorkoutLogDetail({ isOpen, onClose, onSave, onDiscard, l
   }, [log, history, getExercise]);
 
   const totalMedals = React.useMemo(() => {
-    return Object.values(currentLogPRs).reduce((acc, pr: any) => {
+    return Object.values(currentLogPRs).reduce((acc: number, pr: any) => {
       let count = 0;
       if (pr.maxWeightSetId) count++;
       if (pr.max1RMSetId) count++;
