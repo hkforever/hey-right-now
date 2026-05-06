@@ -1,0 +1,8 @@
+{
+  "name": "hey现在",
+  "description": "一款极致简洁、无广告的力量训练记录应用，专为个人健身爱好者打造。",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}

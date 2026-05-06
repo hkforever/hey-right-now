@@ -1,0 +1,16 @@
+{
+  "envId": "rockdaddy-d6gpnau9f481fa35f",
+  "framework": {
+    "name": "rock-workout",
+    "plugins": {
+      "client": {
+        "use": "@cloudbase/framework-plugin-website",
+        "inputs": {
+          "buildCommand": "npm run build",
+          "outputPath": "dist",
+          "cloudPath": "/"
+        }
+      }
+    }
+  }
+}

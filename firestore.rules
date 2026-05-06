@@ -1,0 +1,51 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    // User Profile
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) 
+        && request.resource.data.uid == userId
+        && request.resource.data.keys().hasAll(['uid'])
+        && request.resource.data.uid is string;
+      allow update: if isOwner(userId) 
+        && request.resource.data.uid == userId;
+    }
+
+    // User Data Collections
+    match /users/{userId}/plans/{planId} {
+      allow read, write: if isOwner(userId);
+    }
+    
+    match /users/{userId}/history/{workoutId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/customExercises/{exerciseId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/settings/{settingsId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}
