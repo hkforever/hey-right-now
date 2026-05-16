@@ -1,28 +1,97 @@
 import { Slug, ExtendedBodyPart } from 'react-muscle-highlighter';
 import { WorkoutLog, Exercise } from '../types';
 
+export const MUSCLE_HIERARCHY = [
+  {
+    name: '胸部',
+    muscles: [
+      { name: '胸肌', slug: 'chest' as Slug },
+    ]
+  },
+  {
+    name: '背部',
+    muscles: [
+      { name: '背阔肌', slug: 'upper-back' as Slug },
+      { name: '斜方肌', slug: 'trapezius' as Slug },
+      { name: '上背部', slug: 'upper-back' as Slug },
+      { name: '下背部', slug: 'lower-back' as Slug },
+    ]
+  },
+  {
+    name: '肩部',
+    muscles: [
+      { name: '三角肌', slug: 'deltoids' as Slug },
+    ]
+  },
+  {
+    name: '手臂',
+    muscles: [
+      { name: '肱二头肌', slug: 'biceps' as Slug },
+      { name: '肱三头肌', slug: 'triceps' as Slug },
+      { name: '前臂', slug: 'forearm' as Slug },
+    ]
+  },
+  {
+    name: '核心',
+    muscles: [
+      { name: '腹肌', slug: 'abs' as Slug },
+      { name: '腹斜肌', slug: 'obliques' as Slug },
+    ]
+  },
+  {
+    name: '臀部',
+    muscles: [
+      { name: '臀大肌', slug: 'gluteal' as Slug },
+    ]
+  },
+  {
+    name: '腿部',
+    muscles: [
+      { name: '股四头肌', slug: 'quadriceps' as Slug },
+      { name: '腘绳肌', slug: 'hamstring' as Slug },
+      { name: '内收肌', slug: 'adductors' as Slug },
+      { name: '小腿', slug: 'calves' as Slug },
+    ]
+  },
+  {
+    name: '其他',
+    muscles: [
+      { name: '颈部', slug: 'neck' as Slug },
+      { name: '全身', slug: 'abs' as Slug }, // Fallback for Highlighter
+    ]
+  }
+];
+
 export const muscleMapping: Record<string, Slug> = {
   '胸部': 'chest',
+  '胸肌': 'chest',
+  '背部': 'upper-back',
   '背阔肌': 'upper-back',
   '二头肌': 'biceps',
+  '肱二头肌': 'biceps',
   '腹肌': 'abs',
+  '核心': 'abs',
   '股四头肌': 'quadriceps',
   '腘绳肌': 'hamstring',
   '肩部': 'deltoids',
+  '三角肌': 'deltoids',
   '颈部': 'neck',
   '内收肌': 'adductors',
   '前臂': 'forearm',
   '三头肌': 'triceps',
+  '肱三头肌': 'triceps',
   '上背部': 'upper-back',
   '下背部': 'lower-back',
   '小腿': 'calves',
   '斜方肌': 'trapezius',
   '臀大肌': 'gluteal',
+  '臀部': 'gluteal',
   '外展肌': 'adductors',
+  '腹斜肌': 'obliques',
 };
 
 export const muscleDisplayOrder = [
-  '腹肌', '肩部', '二头肌', '三头肌', '前臂', '股四头肌', '腘绳肌', '小腿', '背阔肌', '上背部', '下背部', '斜方肌', '臀大肌'
+  '胸肌', '三角肌', '肱二头肌', '肱三头肌', '前臂', '腹肌', '背阔肌', '上背部', '下背部', '斜方肌', '臀大肌', '股四头肌', '腘绳肌', '小腿'
 ];
 
 export const allSlugs: Slug[] = [

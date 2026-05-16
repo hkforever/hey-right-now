@@ -126,16 +126,95 @@ export const uploadFile = async (file: File | Blob, path: string, _onProgress?: 
   }
 };
 
+// CloudBase file URL helper with caching, deduplication, and batching
+const urlCache = new Map<string, { url: string, expiry: number }>();
+const pendingPromises = new Map<string, Promise<string>>();
+let batchQueue: { fileId: string, resolve: (url: string) => void, reject: (err: any) => void }[] = [];
+let batchTimeout: NodeJS.Timeout | null = null;
+
+const CACHE_EXPIRY = 2 * 60 * 60 * 1000; // 2 hours (CloudBase temp URLs typically last 2h)
+
+const processBatch = async () => {
+  if (batchQueue.length === 0) return;
+  
+  const currentBatch = [...batchQueue];
+  batchQueue = [];
+  batchTimeout = null;
+
+  // Group queue items by fileId
+  const fileIdToItems = new Map<string, typeof currentBatch>();
+  currentBatch.forEach(item => {
+    const items = fileIdToItems.get(item.fileId) || [];
+    items.push(item);
+    fileIdToItems.set(item.fileId, items);
+  });
+
+  const uniqueFileIds = Array.from(fileIdToItems.keys());
+  const BATCH_SIZE_LIMIT = 50; // CloudBase limit
+  
+  // Process in chunks of 50
+  for (let i = 0; i < uniqueFileIds.length; i += BATCH_SIZE_LIMIT) {
+    const chunkIds = uniqueFileIds.slice(i, i + BATCH_SIZE_LIMIT);
+    
+    try {
+      const { fileList } = await app.getTempFileURL({ fileList: chunkIds });
+      
+      fileList.forEach((item: any) => {
+        const status = item.code || 'SUCCESS';
+        if (status === 'SUCCESS' && item.tempFileURL) {
+          urlCache.set(item.fileID, {
+            url: item.tempFileURL,
+            expiry: Date.now() + CACHE_EXPIRY
+          });
+          
+          const items = fileIdToItems.get(item.fileID);
+          items?.forEach(bi => bi.resolve(item.tempFileURL));
+        } else {
+          // If a specific file failed, fallback to original ID
+          const items = fileIdToItems.get(item.fileID);
+          items?.forEach(bi => bi.resolve(item.fileID));
+        }
+      });
+    } catch (err: any) {
+      console.error("Batch resolve failed for chunk:", err);
+      // If the whole chunk failed (e.g. rate limit), reject those specific items
+      chunkIds.forEach(fid => {
+        const items = fileIdToItems.get(fid);
+        items?.forEach(bi => bi.reject(err));
+      });
+    }
+  }
+};
+
 export const getFileUrl = async (fileId: string): Promise<string> => {
   if (!fileId || !fileId.startsWith('cloud://') || !isCloudBaseConfigured) return fileId;
+
+  // 1. Check cache
+  const cached = urlCache.get(fileId);
+  if (cached && cached.expiry > Date.now()) {
+    return cached.url;
+  }
+
+  // 2. Check for pending identical request
+  if (pendingPromises.has(fileId)) {
+    return pendingPromises.get(fileId)!;
+  }
+
+  // 3. Add to batch queue
+  const promise = new Promise<string>((resolve, reject) => {
+    batchQueue.push({ fileId, resolve, reject });
+    
+    if (!batchTimeout) {
+      batchTimeout = setTimeout(processBatch, 50); // Small window to batch requests
+    }
+  });
+
+  pendingPromises.set(fileId, promise);
+  
   try {
-    const { fileList } = await app.getTempFileURL({
-      fileList: [fileId]
-    });
-    if (!fileList || !fileList[0]) return fileId;
-    return fileList[0].tempFileURL;
-  } catch (err) {
-    console.error("Get temp URL failed:", err);
-    return fileId;
+    const url = await promise;
+    return url;
+  } finally {
+    pendingPromises.delete(fileId);
   }
 };

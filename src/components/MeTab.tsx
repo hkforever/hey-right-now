@@ -117,7 +117,7 @@ export default function MeTab() {
               </div>
             ) : (
               <>
-                {history.map(log => (
+                {(history || []).map(log => (
                 <div 
                   key={log.id} 
                   className="bg-white border border-gray-100 shadow-sm rounded-2xl p-5 space-y-4 active:scale-[0.99] transition-transform relative cursor-pointer hover:border-blue-100"
@@ -227,9 +227,9 @@ export default function MeTab() {
                     </div>
 
                   <div className="space-y-2 pt-2">
-                    {log.items.slice(0, 6).map(item => {
+                    {(log.items || []).slice(0, 6).map(item => {
                       const ex = getExercise(item.exerciseId);
-                      const validSets = item.sets.filter(s => s.completed);
+                      const validSets = (item.sets || []).filter(s => s.completed);
                       let bestSetStr = '';
                       if (ex?.type === 'weight_reps') {
                         const bestSet = [...validSets].sort((a,b) => (Number(b.weight) || 0) - (Number(a.weight) || 0))[0];
@@ -297,7 +297,9 @@ export default function MeTab() {
                       {(ex.videoUrl || (ex.videos && ex.videos.length > 0)) && (
                         <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" title="包含演示视频" />
                       )}
-                      {!ex.isCustom && (
+                      {ex.isCustom && !ex.isStandardOverride ? (
+                        <span className="text-[8px] bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded font-black uppercase border border-blue-100">自定义</span>
+                      ) : (
                         <span className="text-[8px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded font-black uppercase">标准</span>
                       )}
                     </div>
@@ -347,6 +349,9 @@ export default function MeTab() {
             ))}
           </div>
         )}
+
+        <div className="mt-12 mb-24">
+        </div>
       </div>
     </main>
 

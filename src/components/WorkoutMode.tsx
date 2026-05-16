@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useAppStore, useAppData } from '../store';
 import { ExerciseType, WorkoutLog, WorkoutSet, MediaItem } from '../types';
-import { ChevronDown, Check, Plus, Clock, Trash2, Play, Pause } from 'lucide-react';
+import { ChevronDown, Check, Plus, Clock, Trash2, Play, Pause, Activity } from 'lucide-react';
 import ExerciseSelector from './ExerciseSelector';
 import CloudMedia from './CloudMedia';
 import RestTimerModal from './RestTimerModal';
+import ExerciseTypeModal, { getExerciseTypeLabel } from './ExerciseTypeModal';
 import DurationPickerModal from './DurationPickerModal';
 import WorkoutSummaryModal from './WorkoutSummaryModal';
 import WorkoutCelebrationModal from './WorkoutCelebrationModal';
@@ -122,6 +123,7 @@ export default function WorkoutMode() {
   const [duration, setDuration] = useState(0);
   const [isSelectingExercise, setIsSelectingExercise] = useState(false);
   const [activeRestTimerId, setActiveRestTimerId] = useState<string | null>(null);
+  const [activeExerciseTypePickerId, setActiveExerciseTypePickerId] = useState<string | null>(null);
   const [activeDurationPicker, setActiveDurationPicker] = useState<{ itemId: string, setId: string, key: 'time' | 'weight' | 'reps' | 'distance' } | null>(null);
   const [swipedSetId, setSwipedSetId] = useState<string | null>(null);
   const [activeRPEPicker, setActiveRPEPicker] = useState<{ itemId: string, setId: string, value: string, setNum: number, reps: string | number, exerciseName: string } | null>(null);
@@ -348,7 +350,7 @@ export default function WorkoutMode() {
         exerciseId: eId,
         notes: '',
         restTime: prev?.restTime ?? 0,
-        sets: prev?.sets.map(s => ({
+        sets: (prev?.sets || []).map(s => ({
             id: crypto.randomUUID(),
             setType: s.setType,
             completed: false,
@@ -361,6 +363,38 @@ export default function WorkoutMode() {
     });
     updateActiveWorkout({ ...activeWorkout, items: [...activeWorkout.items, ...newItems] });
     setIsSelectingExercise(false);
+  };
+
+  const changeItemType = (itemId: string, newType: ExerciseType) => {
+    const newItems = activeWorkout.items.map(item => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          type: newType,
+          sets: item.sets.map(s => {
+            const rs: any = { id: s.id, setType: s.setType, completed: s.completed, achievements: s.achievements };
+            if (['weight_reps', 'reps_only', 'weighted_bodyweight', 'assisted_bodyweight'].includes(newType)) {
+              rs.reps = s.reps || 12;
+            }
+            if (['weight_reps', 'time_weight', 'weight_distance'].includes(newType)) {
+              rs.weight = s.weight || undefined;
+            }
+            if (['weighted_bodyweight', 'assisted_bodyweight'].includes(newType)) {
+              rs.weight = s.weight || undefined;
+            }
+            if (['time', 'time_weight', 'distance_time'].includes(newType)) {
+              rs.time = s.time || 60;
+            }
+            if (['distance_time', 'weight_distance'].includes(newType)) {
+              rs.distance = s.distance || undefined;
+            }
+            return rs;
+          })
+        };
+      }
+      return item;
+    });
+    updateActiveWorkout({ ...activeWorkout, items: newItems });
   };
 
   const addSet = (itemId: string) => {
@@ -409,7 +443,7 @@ export default function WorkoutMode() {
         const isDataField = ['weight', 'reps', 'time', 'distance'].includes(field as string);
         const shouldPropagate = targetSet && !targetSet.completed && isDataField;
 
-        const newSets = item.sets.map((set, idx) => {
+        const newSets = (item.sets || []).map((set, idx) => {
           if (idx === targetSetIndex) {
             const completed = field === 'completed' ? value : set.completed;
             const wasCompleted = set.completed;
@@ -508,7 +542,7 @@ export default function WorkoutMode() {
   const renderItem = (item: any, idx: number) => {
     const ex = getExercise(item.exerciseId);
     const prevItem = getLastWorkoutItemForExercise(item.exerciseId);
-    const cols = getTypeColumns(ex?.type);
+    const cols = getTypeColumns(item.type || ex?.type);
 
     return (
       <div key={item.id} className="pt-2 bg-white mb-2 shadow-sm border-y border-gray-50">
@@ -538,12 +572,21 @@ export default function WorkoutMode() {
           </div>
         </div>
         
-        <div 
-          onClick={() => setActiveRestTimerId(item.id)}
-          className="flex items-center text-blue-500 text-[10px] font-bold tracking-wider px-4 ml-[60px] mb-4 bg-blue-50 rounded-full py-1 w-fit cursor-pointer hover:opacity-80 transition-opacity"
-        >
-          <Clock className="w-3 h-3 mr-1" />
-          <span>休息定时器: {formatRestTime(item.restTime || 0)}</span>
+        <div className="flex flex-wrap items-center gap-2 px-4 ml-[60px] mb-4 pr-4">
+          <div 
+            onClick={() => setActiveRestTimerId(item.id)}
+            className="flex items-center text-blue-500 text-[10px] font-bold tracking-wider bg-blue-50 rounded-full py-1 px-3 w-fit cursor-pointer hover:opacity-80 transition-opacity"
+          >
+            <Clock className="w-3 h-3 mr-1" />
+            <span>休息: {formatRestTime(item.restTime || 0)}</span>
+          </div>
+          <div 
+            onClick={() => setActiveExerciseTypePickerId(item.id)}
+            className="flex items-center text-blue-500 text-[10px] font-bold tracking-wider bg-blue-50 rounded-full py-1 px-3 w-fit cursor-pointer hover:opacity-80 transition-opacity"
+          >
+            <Activity className="w-3 h-3 mr-1" />
+            <span>类型: {getExerciseTypeLabel(item.type || ex?.type)}</span>
+          </div>
         </div>
         
         <div className="space-y-0 relative">
@@ -562,7 +605,7 @@ export default function WorkoutMode() {
              <div className="col-span-1 flex justify-center"><Check className="w-3 h-3" /></div>
           </div>
           
-          {item.sets.map((set: WorkoutSet, setIdx: number) => {
+          {(item.sets || []).map((set: WorkoutSet, setIdx: number) => {
             const prevSet = prevItem?.sets[setIdx];
             const pCol1 = cols.col1 ? prevSet?.[cols.col1.key] : null;
             const pCol2 = cols.col2 ? prevSet?.[cols.col2.key] : null;
@@ -703,9 +746,11 @@ export default function WorkoutMode() {
                       {renderInput(cols.col1, placeholder1, "col-span-3")}
                       {renderInput(cols.col2, placeholder2, "col-span-3")}
                     </>
-                  ) : (
-                    renderInput(cols.col1 || cols.col2, placeholder1, "col-span-6")
-                  )}
+                  ) : cols.col1 ? (
+                    renderInput(cols.col1, placeholder1, "col-span-6")
+                  ) : cols.col2 ? (
+                    renderInput(cols.col2, placeholder2, "col-span-6")
+                  ) : null}
 
                   <div className="col-span-2 px-1">
                     <button 
@@ -969,6 +1014,19 @@ export default function WorkoutMode() {
         />
       )}
 
+      {activeExerciseTypePickerId && activeWorkout && (
+        <ExerciseTypeModal
+          isOpen={!!activeExerciseTypePickerId}
+          onClose={() => setActiveExerciseTypePickerId(null)}
+          value={activeWorkout.items.find(i => i.id === activeExerciseTypePickerId)?.type || getExercise(activeWorkout.items.find(i => i.id === activeExerciseTypePickerId)?.exerciseId || '')?.type || 'weight_reps'}
+          onChange={(val) => {
+            if (activeExerciseTypePickerId) {
+              changeItemType(activeExerciseTypePickerId, val);
+            }
+          }}
+        />
+      )}
+
       {activeRPEPicker && (
         <RPEPickerModal 
           isOpen={!!activeRPEPicker}
@@ -994,7 +1052,7 @@ export default function WorkoutMode() {
           if (activeDurationPicker && activeWorkout) {
             updateActiveWorkout({
               ...activeWorkout,
-              items: activeWorkout.items.map(i => i.id === activeDurationPicker.itemId ? { ...i, sets: i.sets.map(s => s.id === activeDurationPicker.setId ? { ...s, [activeDurationPicker.key]: val } : s) } : i)
+              items: activeWorkout.items.map(i => i.id === activeDurationPicker.itemId ? { ...i, sets: (i.sets || []).map(s => s.id === activeDurationPicker.setId ? { ...s, [activeDurationPicker.key]: val } : s) } : i)
             });
           }
         }}

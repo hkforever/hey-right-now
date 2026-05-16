@@ -264,7 +264,7 @@ export default function WorkoutLogDetail({ isOpen, onClose, onSave, onDiscard, l
           </div>
 
           <div className="space-y-4">
-            {log.items.map((item) => {
+            {(log.items || []).map((item) => {
               const exercise = getExercise(item.exerciseId);
               if (!exercise) return null;
 
@@ -290,7 +290,7 @@ export default function WorkoutLogDetail({ isOpen, onClose, onSave, onDiscard, l
                     </div>
 
                     <div className="pt-0.5">
-                      {item.sets.filter(s => s.completed).map((set, sIdx) => {
+                      {(item.sets || []).filter(s => s.completed).map((set, sIdx) => {
                         const isMaxWeight = currentLogPRs[item.id]?.maxWeightSetId === set.id;
                         const isMax1RM = currentLogPRs[item.id]?.max1RMSetId === set.id;
                         const isBestSet = currentLogPRs[item.id]?.bestSetId === set.id;
@@ -301,37 +301,37 @@ export default function WorkoutLogDetail({ isOpen, onClose, onSave, onDiscard, l
                         if (isBestSet) medals.push({ label: '最佳组' });
 
                         return (
-                        <div key={set.id} className={`flex items-center space-x-10 relative group px-3 py-1.5 rounded-xl transition-colors ${sIdx % 2 !== 0 ? 'bg-gray-50/80' : ''}`}>
-                          <span className="w-8 text-xs font-medium text-gray-500 text-center font-mono group-hover:text-blue-400 transition-colors">{sIdx + 1}</span>
-                          <div className="flex-1">
-                            <div className="flex items-baseline space-x-1">
-                              <span className="text-sm font-semibold text-gray-900 tracking-tight">
+                        <div key={set.id} className={`flex items-center space-x-4 relative group px-3 py-1.5 rounded-xl transition-colors ${sIdx % 2 !== 0 ? 'bg-gray-50/80' : ''}`}>
+                          <span className="w-8 shrink-0 text-xs font-medium text-gray-500 text-center font-mono group-hover:text-blue-400 transition-colors">{sIdx + 1}</span>
+                          <div className="flex-1 flex items-center justify-between min-w-0">
+                            <div className="flex items-baseline space-x-1 truncate mr-2">
+                              <span className="text-sm font-semibold text-gray-900 tracking-tight whitespace-nowrap">
                                 {exercise.type.includes('weight') ? (
                                   <>
-                                    {set.weight}<span className="text-xs text-gray-400 font-bold ml-1 uppercase">公斤</span>
-                                    <span className="mx-2 text-gray-400 font-medium">x</span>
+                                    {set.weight}<span className="text-[10px] text-gray-400 font-bold ml-0.5 uppercase">公斤</span>
+                                    <span className="mx-1.5 text-gray-300 font-medium font-mono text-xs">x</span>
                                     {set.reps}
                                   </>
                                 ) : (
                                   <>
-                                    {set.reps && <>{set.reps}<span className="text-xs text-gray-400 font-bold ml-1 uppercase">次</span></>}
+                                    {set.reps && <>{set.reps}<span className="text-[10px] text-gray-400 font-bold ml-0.5 uppercase">次</span></>}
                                     {set.time && (
                                       <>
                                         {Number(set.time) >= 60 ? (
                                           <>
                                             {Math.floor(Number(set.time) / 60)}
-                                            <span className="text-xs text-gray-400 font-bold ml-0.5 uppercase">分</span>
+                                            <span className="text-[10px] text-gray-400 font-bold ml-0.5 uppercase">分</span>
                                             {Number(set.time) % 60 > 0 && (
                                               <>
                                                 {Number(set.time) % 60}
-                                                <span className="text-xs text-gray-400 font-bold ml-0.5 uppercase">秒</span>
+                                                <span className="text-[10px] text-gray-400 font-bold ml-0.5 uppercase">秒</span>
                                               </>
                                             )}
                                           </>
                                         ) : (
                                           <>
                                             {set.time}
-                                            <span className="text-xs text-gray-400 font-bold ml-1 uppercase">秒</span>
+                                            <span className="text-[10px] text-gray-400 font-bold ml-0.5 uppercase">秒</span>
                                           </>
                                         )}
                                       </>
@@ -342,10 +342,10 @@ export default function WorkoutLogDetail({ isOpen, onClose, onSave, onDiscard, l
                             </div>
                             
                             {medals.length > 0 && (
-                              <div className="flex items-center space-x-2.5 mt-1">
+                              <div className="flex items-center space-x-1.5 shrink-0">
                                 {medals.map(m => (
-                                  <span key={m.label} className="inline-flex items-center text-[11px] font-bold text-gray-600 tracking-tight">
-                                    <span className="mr-1 text-[13px] leading-none">🥇</span>
+                                  <span key={m.label} className="inline-flex items-center text-[9px] font-bold text-gray-600 tracking-tight whitespace-nowrap">
+                                    <span className="mr-0.5 text-[11px] leading-none">🥇</span>
                                     {m.label}
                                   </span>
                                 ))}

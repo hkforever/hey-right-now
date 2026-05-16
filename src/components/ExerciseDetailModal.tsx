@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { X, PlayCircle, ExternalLink, Video, Plus, Link as LinkIcon, AlertCircle, Loader2, Trophy, HelpCircle, ChevronRight, Info } from 'lucide-react';
+import { X, PlayCircle, ExternalLink, Video, Plus, Link as LinkIcon, AlertCircle, Loader2, Trophy, HelpCircle, ChevronRight, Info, Trash2 } from 'lucide-react';
 import { Exercise, WorkoutLog, WorkoutSet } from '../types';
 import { translateMuscle, translateEquipment, isVideo } from '../lib/utils';
 import { useAppStore, useAppData } from '../store';
@@ -18,7 +18,7 @@ export default function ExerciseDetailModal({
   onClose: () => void;
   onNavigateToLog?: (logId: string, exerciseId: string) => void;
 }) {
-  const { updateCustomExercise, addCustomExercise, history, userStats } = useAppStore();
+  const { updateCustomExercise, addCustomExercise, deleteCustomExercise, history, userStats } = useAppStore();
   const { getExercise } = useAppData();
   const [isUpdating, setIsUpdating] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -163,12 +163,18 @@ export default function ExerciseDetailModal({
     }
 
     return (
-      <CloudMedia 
-        src={url} 
-        type="video"
-        controls 
-        className="w-full aspect-video rounded-2xl shadow-lg bg-black"
-      />
+      <div className="aspect-video rounded-2xl overflow-hidden border border-gray-100 shadow-sm bg-gray-50 flex items-center justify-center">
+        <CloudMedia 
+          src={url} 
+          type={isVideo(url) ? 'video' : 'image'}
+          controls={isVideo(url)}
+          autoPlay={!isVideo(url)}
+          muted={!isVideo(url)}
+          loop={!isVideo(url)}
+          playsInline={!isVideo(url)}
+          className="w-full h-full object-contain"
+        />
+      </div>
     );
   };
 
@@ -177,22 +183,50 @@ export default function ExerciseDetailModal({
     try {
       if (updatedExercise.isCustom) {
         await updateCustomExercise(updatedExercise);
-        alert('演示视频更新成功');
-        onClose();
+        alert('更新成功');
       } else {
-        const newId = `custom_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-        const cloned: Exercise = {
+        // Silently save standard exercise modifications to user's database
+        // We use the same ID but mark it as custom in storage to ensure persistence
+        const modified: Exercise = {
           ...updatedExercise,
-          id: newId,
+          id: exercise.id, 
           isCustom: true
         };
-        await addCustomExercise(cloned);
-        alert('已成功将此标准动作创建为自定义动作并补充了视频。您可以在“我-运动项目”中找到它。');
-        onClose();
+        await addCustomExercise(modified);
+        alert('补充视频已保存');
       }
+      // Note: we don't automatically close so they can see the video, but wait they might want to do other things.
+      // We will keep the default behavior of closing for now
+      onClose();
     } catch (e: any) {
       console.error('Update failed:', e);
       alert('添加失败: ' + (e.message || '未知错误'));
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteVideo = async (idxToDelete: number) => {
+    if (!window.confirm('确定要删除此视频吗？')) return;
+    setIsUpdating(true);
+    try {
+      const updatedVideos = [...(exercise.videos || [])];
+      updatedVideos.splice(idxToDelete, 1);
+
+      if (exercise.isStandardOverride && updatedVideos.length <= 1) {
+        if (updatedVideos.length === 0 || updatedVideos[0].title === '演示视频') {
+          // If only the original standard video remains, or no videos remain, clean up the override
+          await deleteCustomExercise(exercise.id);
+          onClose(); 
+        } else {
+          await updateCustomExercise({ ...exercise, videos: updatedVideos });
+        }
+      } else if (exercise.isCustom) {
+        await updateCustomExercise({ ...exercise, videos: updatedVideos });
+      }
+    } catch (e: any) {
+      console.error('Delete video failed:', e);
+      alert('删除失败: ' + (e.message || '未知错误'));
     } finally {
       setIsUpdating(false);
     }
@@ -245,8 +279,12 @@ export default function ExerciseDetailModal({
   };
 
   const allVideos = [...(exercise.videos || [])];
-  if (exercise.videoUrl && !allVideos.find(v => v.url === exercise.videoUrl)) {
-    allVideos.unshift({ url: exercise.videoUrl, title: '演示视频' });
+  // If no user videos, show the standard gif/video as the primary
+  if (allVideos.length === 0 && (exercise.videoUrl || exercise.media)) {
+    const standardUrl = exercise.videoUrl || exercise.media;
+    if (standardUrl) {
+      allVideos.push({ url: standardUrl, title: '标准演示' });
+    }
   }
 
   const [activeMuscle, setActiveMuscle] = useState<string | null>(null);
@@ -307,6 +345,15 @@ export default function ExerciseDetailModal({
             <div className="flex flex-col">
               <h3 className="text-lg font-black text-gray-900 tracking-tight leading-tight">{exercise.name}</h3>
               <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                {exercise.isCustom && !exercise.isStandardOverride ? (
+                  <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider border border-blue-100">
+                    自定义
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-2 py-0.5 rounded uppercase tracking-wider border border-gray-100">
+                    标准
+                  </span>
+                )}
                 <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider">
                   {translateEquipment(exercise.equipment)}
                 </span>
@@ -373,7 +420,34 @@ export default function ExerciseDetailModal({
                </div>
              )}
 
-             {allVideos.length === 0 ? (
+             {/* Video list or placeholder */}
+             {allVideos.length > 0 ? (
+               <div className="space-y-6">
+                 {allVideos.map((vid, idx) => (
+                   <div key={idx} className="space-y-2 relative group">
+                     <div className="flex flex-row items-center justify-between">
+                       {vid.title ? (
+                         <span className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                           <PlayCircle className="w-4 h-4 text-blue-500" />
+                           {vid.title}
+                         </span>
+                       ) : (<div />)}
+                       {exercise.isCustom && vid.title !== '演示视频' && vid.title !== '标准演示' && (
+                         <button
+                           onClick={() => handleDeleteVideo(idx)}
+                           disabled={isUpdating}
+                           className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+                           title="删除视频"
+                         >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
+                       )}
+                     </div>
+                     {renderVideo(vid.url)}
+                   </div>
+                 ))}
+               </div>
+             ) : (
                <div className="aspect-video bg-gray-100 rounded-2xl flex flex-col items-center justify-center border border-gray-200">
                  <PlayCircle className="w-12 h-12 text-gray-300 mb-2" />
                  <span className="text-gray-400 text-sm font-medium">暂无演示视频</span>
@@ -384,33 +458,31 @@ export default function ExerciseDetailModal({
                    点击补充视频资料
                  </button>
                </div>
-             ) : (
-               <div className="space-y-6">
-                 {allVideos.map((vid, idx) => (
-                   <div key={idx} className="space-y-2">
-                     {vid.title && (
-                       <span className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                         <PlayCircle className="w-4 h-4 text-blue-500" />
-                         {vid.title}
-                       </span>
-                     )}
-                     {renderVideo(vid.url)}
-                   </div>
-                 ))}
-               </div>
              )}
 
-             {!exercise.isCustom && (
-               <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-2">
-                 <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                 <p className="text-[10px] text-amber-700 font-medium leading-relaxed">
-                   补充视频会将此标准动作复制为您的自定义动作，以便保存修改。
-                 </p>
-               </div>
-             )}
+
+
+             {/* Only show warning if user really needs to know something critical, 
+                 but per user request, we are removing the "copying to custom" warning to make it feel direct */}
           </div>
 
-          <div className="space-y-5 pt-2 pb-4">
+          <div className="space-y-6 pt-2 pb-4">
+            {exercise.instruction_steps?.zh && exercise.instruction_steps.zh.length > 0 && (
+              <div>
+                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-3">训练要点</h4>
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 space-y-3">
+                  {exercise.instruction_steps.zh.map((step, idx) => (
+                    <div key={idx} className="flex gap-3">
+                      <span className="shrink-0 w-5 h-5 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full text-[10px] font-black">
+                        {idx + 1}
+                      </span>
+                      <p className="text-sm text-gray-700 leading-relaxed font-medium">{step}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-3">训练肌肉</h4>
               <div className="flex flex-col gap-5 mt-2">

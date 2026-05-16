@@ -27,6 +27,23 @@ async function startServer() {
     }
   });
 
+  // Exercise API
+  const SOURCE_FILE = 'exercises.json'; 
+
+  app.get("/api/exercises", (req, res) => {
+    try {
+      const sourcePath = path.join(process.cwd(), SOURCE_FILE);
+      if (!fs.existsSync(sourcePath)) {
+        return res.json([]);
+      }
+      const exercises = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
+      res.json(exercises);
+    } catch (err: any) {
+      console.error("[Server] Exercises fetch error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   const distPath = path.join(process.cwd(), 'dist');
   const isProduction = process.env.NODE_ENV === "production";
 

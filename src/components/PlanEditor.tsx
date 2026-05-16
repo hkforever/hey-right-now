@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { ExerciseType, Plan, PlanItem, WorkoutSet, PlanSection } from '../types';
 import { useAppStore, useAppData } from '../store';
-import { MoreVertical, Check, ArrowUp, ArrowDown, RefreshCw, Trash2, GripHorizontal, X, ChevronDown, ChevronRight, Pencil, Plus, Loader2 } from 'lucide-react';
+import { MoreVertical, Check, ArrowUp, ArrowDown, RefreshCw, Trash2, GripHorizontal, X, ChevronDown, ChevronRight, Pencil, Plus, Loader2, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ExerciseSelector from './ExerciseSelector';
 import RestTimerModal from './RestTimerModal';
-import ReorderModal from './ReorderModal';
+import ExerciseTypeModal, { getExerciseTypeLabel } from './ExerciseTypeModal';
 import DurationPickerModal from './DurationPickerModal';
+import ExerciseDetailModal from './ExerciseDetailModal';
+import ReorderModal from './ReorderModal';
+import CloudMedia from './CloudMedia';
 import { cn, formatRestTime, formatTime } from '../lib/utils';
 
 const getTypeColumns = (type?: ExerciseType): { col1: { key: 'weight' | 'reps' | 'time' | 'distance', label: string } | null, col2: { key: 'weight' | 'reps' | 'time' | 'distance', label: string } | null } => {
@@ -62,6 +65,8 @@ export default function PlanEditor({ planId, onClose }: { planId: string | null,
   const [replacingItemId, setReplacingItemId] = useState<string | null>(null);
   const [isReorderModalOpen, setIsReorderModalOpen] = useState(false);
   const [activeDurationPicker, setActiveDurationPicker] = useState<{ itemId: string, setId: string, key: 'time' | 'weight' | 'reps' | 'distance' } | null>(null);
+  const [activeExerciseTypePickerId, setActiveExerciseTypePickerId] = useState<string | null>(null);
+  const [showingExerciseDetail, setShowingExerciseDetail] = useState<any>(null);
   const [swipedSetId, setSwipedSetId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -148,6 +153,37 @@ export default function PlanEditor({ planId, onClose }: { planId: string | null,
     }));
   };
 
+  const changeItemType = (itemId: string, newType: ExerciseType) => {
+    setItems(prev => prev.map(item => {
+      if (item.id === itemId) {
+        return {
+          ...item,
+          type: newType,
+          targetSets: item.targetSets.map(s => {
+            const rs: any = { id: s.id, setType: s.setType, completed: s.completed, achievements: s.achievements };
+            if (['weight_reps', 'reps_only', 'weighted_bodyweight', 'assisted_bodyweight'].includes(newType)) {
+              rs.reps = s.reps || 12;
+            }
+            if (['weight_reps', 'time_weight', 'weight_distance'].includes(newType)) {
+              rs.weight = s.weight || undefined;
+            }
+            if (['weighted_bodyweight', 'assisted_bodyweight'].includes(newType)) {
+              rs.weight = s.weight || undefined;
+            }
+            if (['time', 'time_weight', 'distance_time'].includes(newType)) {
+              rs.time = s.time || 60;
+            }
+            if (['distance_time', 'weight_distance'].includes(newType)) {
+              rs.distance = s.distance || undefined;
+            }
+            return rs;
+          })
+        };
+      }
+      return item;
+    }));
+  };
+
   const addSection = () => {
     const newSection = { id: crypto.randomUUID(), title: '新分类' };
     setSections(prev => [...prev, newSection]);
@@ -173,43 +209,67 @@ export default function PlanEditor({ planId, onClose }: { planId: string | null,
 
   const renderItem = (item: PlanItem, idx: number) => {
     const ex = getExercise(item.exerciseId);
-    const cols = getTypeColumns(ex?.type);
+    const cols = getTypeColumns(item.type || ex?.type);
     return (
       <div key={item.id} className="space-y-3">
         <div className="flex justify-between items-center font-medium px-4 mb-2 mt-4 relative">
-          <div className="flex items-center space-x-3 flex-1">
-            <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 shrink-0 border border-gray-200 overflow-hidden">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-6 h-6"><path d="M6.5 6.5v11M17.5 6.5v11M4 9h5M15 9h5M4 15h5M15 15h5M9 12h6"/></svg>
+          <div className="flex flex-col flex-1">
+            <div className="flex items-center space-x-3 mb-1">
+              <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 shrink-0 border border-gray-200 overflow-hidden">
+                {ex?.media ? (
+                  <CloudMedia src={ex.media} className="w-full h-full object-cover" />
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-6 h-6"><path d="M6.5 6.5v11M17.5 6.5v11M4 9h5M15 9h5M4 15h5M15 15h5M9 12h6"/></svg>
+                )}
+              </div>
+              <span 
+                className="text-blue-500 text-base font-semibold cursor-pointer hover:underline transition-opacity"
+                onClick={() => {
+                  if (ex) setShowingExerciseDetail(ex);
+                }}
+              >
+                {ex?.name || '未知动作'}
+              </span>
             </div>
-            <span className="text-blue-500 text-base font-semibold">{ex?.name || '未知动作'}</span>
           </div>
-          <button onClick={() => setActiveMenuId(item.id)} className="p-2 text-gray-400 hover:text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
+          <button onClick={() => setActiveMenuId(item.id)} className="p-2 text-gray-400 hover:text-gray-900 rounded-full hover:bg-gray-100 transition-colors self-start">
             <MoreVertical className="w-5 h-5" />
           </button>
         </div>
         
         <div className="text-sm text-gray-400 px-4 ml-12 mb-2">在此处添加计划备注</div>
         
-        <div 
-          onClick={() => setActiveRestTimerId(item.id)}
-          className="flex items-center text-blue-500 text-sm px-4 ml-12 mb-4 cursor-pointer hover:opacity-80 transition-opacity w-fit"
-        >
-          <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          <span>休息定时器: {formatRestTime(item.restTime || 0)}</span>
+        <div className="flex flex-wrap items-center gap-4 px-4 ml-12 mb-4">
+          <div 
+            onClick={() => setActiveRestTimerId(item.id)}
+            className="flex items-center text-blue-500 text-sm cursor-pointer hover:opacity-80 transition-opacity w-fit"
+          >
+            <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            <span>休息: {formatRestTime(item.restTime || 0)}</span>
+          </div>
+          <div 
+            onClick={() => setActiveExerciseTypePickerId(item.id)}
+            className="flex items-center text-blue-500 text-sm cursor-pointer hover:opacity-80 transition-opacity w-fit"
+          >
+            <Activity className="w-4 h-4 mr-1" />
+            <span>类型: {getExerciseTypeLabel(item.type || ex?.type)}</span>
+          </div>
         </div>
         
         <div className="space-y-0 relative">
           <div className="grid grid-cols-12 gap-1 px-4 mb-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider pb-1 border-b border-gray-100">
              <div className="col-span-2 text-center">组</div>
-             {cols.col1 ? (
-               <div className="col-span-5 text-center">{cols.col1.label}</div>
-             ) : <div className="col-span-10 text-center"></div>}
-             {cols.col2 ? (
-               <div className="col-span-5 text-center">{cols.col2.label}</div>
-             ) : <div className="col-span-10 text-center"></div>}
+             {cols.col1 && cols.col2 ? (
+               <>
+                 <div className="col-span-5 text-center">{cols.col1.label}</div>
+                 <div className="col-span-5 text-center">{cols.col2.label}</div>
+               </>
+             ) : (
+               <div className="col-span-10 text-center">{cols.col1?.label || cols.col2?.label}</div>
+             )}
           </div>
           
-          {item.targetSets.map((set, setIdx) => (
+          {(item.targetSets || []).map((set, setIdx) => (
             <div key={set.id} className="relative group overflow-hidden h-[57px]">
               <div 
                 onClick={() => deleteSet(item.id, set.id)}
@@ -246,9 +306,9 @@ export default function PlanEditor({ planId, onClose }: { planId: string | null,
                 <div className="col-span-2 flex justify-center">
                   <span className="font-bold font-mono text-sm py-0.5 px-2 rounded-md bg-gray-100 text-gray-600 border border-transparent">{setIdx + 1}</span>
                 </div>
-                <div className="col-span-5 px-2">
-                  {cols.col1 ? (
-                    cols.col1.key === 'time' ? (
+                {cols.col1 && (
+                  <div className={cols.col1 && cols.col2 ? "col-span-5 px-2" : "col-span-10 px-2 lg:px-8"}>
+                    {cols.col1.key === 'time' ? (
                       <button
                         onClick={() => setActiveDurationPicker({ itemId: item.id, setId: set.id, key: cols.col1!.key })}
                         className="w-full h-10 text-center rounded-lg font-bold font-mono text-lg transition-all bg-gray-100 text-gray-900 border border-transparent focus:bg-white focus:border-blue-500 flex items-center justify-center"
@@ -261,16 +321,16 @@ export default function PlanEditor({ planId, onClose }: { planId: string | null,
                         placeholder="-"
                         value={set[cols.col1.key] || ''}
                         onChange={(e) => {
-                          setItems(prev => prev.map(i => i.id === item.id ? { ...i, targetSets: i.targetSets.map(s => s.id === set.id ? { ...s, [cols.col1!.key]: e.target.value ? Number(e.target.value) : undefined } : s) } : i))
+                          setItems(prev => prev.map(i => i.id === item.id ? { ...i, targetSets: (i.targetSets || []).map(s => s.id === set.id ? { ...s, [cols.col1!.key]: e.target.value ? Number(e.target.value) : undefined } : s) } : i))
                         }}
                         className="w-full h-10 text-center rounded-lg font-bold font-mono text-lg outline-none transition-all bg-gray-100 text-gray-900 placeholder-gray-300 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" 
                       />
-                    )
-                  ) : null}
-                </div>
-                <div className="col-span-5 px-2">
-                  {cols.col2 ? (
-                    cols.col2.key === 'time' ? (
+                    )}
+                  </div>
+                )}
+                {cols.col2 && (
+                  <div className={cols.col1 && cols.col2 ? "col-span-5 px-2" : "col-span-10 px-2 lg:px-8"}>
+                    {cols.col2.key === 'time' ? (
                       <button
                         onClick={() => setActiveDurationPicker({ itemId: item.id, setId: set.id, key: cols.col2!.key })}
                         className="w-full h-10 text-center rounded-lg font-bold font-mono text-lg transition-all bg-gray-100 text-gray-900 border border-transparent focus:bg-white focus:border-blue-500 flex items-center justify-center"
@@ -283,13 +343,13 @@ export default function PlanEditor({ planId, onClose }: { planId: string | null,
                         placeholder="-"
                         value={set[cols.col2.key] || ''}
                         onChange={(e) => {
-                          setItems(prev => prev.map(i => i.id === item.id ? { ...i, targetSets: i.targetSets.map(s => s.id === set.id ? { ...s, [cols.col2!.key]: e.target.value ? Number(e.target.value) : undefined } : s) } : i))
+                          setItems(prev => prev.map(i => i.id === item.id ? { ...i, targetSets: (i.targetSets || []).map(s => s.id === set.id ? { ...s, [cols.col2!.key]: e.target.value ? Number(e.target.value) : undefined } : s) } : i))
                         }}
                         className="w-full h-10 text-center rounded-lg font-bold font-mono text-lg outline-none transition-all bg-gray-100 text-gray-900 placeholder-gray-300 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" 
                       />
-                    )
-                  ) : null}
-                </div>
+                    )}
+                  </div>
+                )}
               </motion.div>
             </div>
           ))}
@@ -601,6 +661,19 @@ export default function PlanEditor({ planId, onClose }: { planId: string | null,
         />
       )}
 
+      {activeExerciseTypePickerId && (
+        <ExerciseTypeModal
+          isOpen={!!activeExerciseTypePickerId}
+          onClose={() => setActiveExerciseTypePickerId(null)}
+          value={items.find(i => i.id === activeExerciseTypePickerId)?.type || getExercise(items.find(i => i.id === activeExerciseTypePickerId)?.exerciseId || '')?.type || 'weight_reps'}
+          onChange={(val) => {
+            if (activeExerciseTypePickerId) {
+              changeItemType(activeExerciseTypePickerId, val);
+            }
+          }}
+        />
+      )}
+
       <AnimatePresence>
         {isReorderModalOpen && (
           <ReorderModal
@@ -620,13 +693,20 @@ export default function PlanEditor({ planId, onClose }: { planId: string | null,
       <DurationPickerModal
         isOpen={!!activeDurationPicker}
         onClose={() => setActiveDurationPicker(null)}
-        value={activeDurationPicker ? Number(items.find(i => i.id === activeDurationPicker.itemId)?.targetSets.find(s => s.id === activeDurationPicker.setId)?.[activeDurationPicker.key] || 0) : 0}
+        value={activeDurationPicker ? Number(items.find(i => i.id === activeDurationPicker.itemId)?.targetSets?.find(s => s.id === activeDurationPicker.setId)?.[activeDurationPicker.key] || 0) : 0}
         onChange={(val) => {
           if (activeDurationPicker) {
-            setItems(prev => prev.map(i => i.id === activeDurationPicker.itemId ? { ...i, targetSets: i.targetSets.map(s => s.id === activeDurationPicker.setId ? { ...s, [activeDurationPicker.key]: val } : s) } : i));
+            setItems(prev => prev.map(i => i.id === activeDurationPicker.itemId ? { ...i, targetSets: (i.targetSets || []).map(s => s.id === activeDurationPicker.setId ? { ...s, [activeDurationPicker.key]: val } : s) } : i));
           }
         }}
       />
+
+      {showingExerciseDetail && (
+        <ExerciseDetailModal 
+          exercise={showingExerciseDetail}
+          onClose={() => setShowingExerciseDetail(null)}
+        />
+      )}
     </div>
   );
 }

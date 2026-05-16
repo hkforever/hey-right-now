@@ -1,13 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useAppStore } from '../store';
-import { Plus, Play, MoreHorizontal, Copy, Pencil, Trash2, Download, Upload } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { useAppStore, useAppData } from '../store';
+import { Plus, Play, MoreHorizontal, Copy, Pencil, Trash2, Download, Upload, Activity, Clock, Weight, Compass } from 'lucide-react';
 import PlanEditor from './PlanEditor';
+import ExplorePlansModal from './ExplorePlansModal';
+import { format } from 'date-fns';
+import { zhCN } from 'date-fns/locale';
+import { calculateVolume, formatDuration } from '../lib/utils';
 
 export default function HomeTab() {
-  const { plans, activeWorkout, setIsWorkoutMinimized, startWorkout, deletePlan, addPlan, customExercises, addCustomExercise } = useAppStore();
+  const { plans, history, activeWorkout, setIsWorkoutMinimized, startWorkout, deletePlan, addPlan, customExercises, addCustomExercise, setPreviewLogId } = useAppStore();
+  const { getExercise } = useAppData();
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [pendingPlan, setPendingPlan] = useState<any | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isExploring, setIsExploring] = useState(false);
   const [menuOpenPlanId, setMenuOpenPlanId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -72,7 +78,7 @@ export default function HomeTab() {
   const handleExport = (plan: any) => {
     try {
       // Find custom exercises referenced in this plan
-      const exerciseIds = new Set(plan.items.map((item: any) => item.exerciseId));
+      const exerciseIds = new Set((plan.items || []).map((item: any) => item.exerciseId));
       const referencedCustomExercises = customExercises.filter(ex => exerciseIds.has(ex.id));
 
       const exportData = {
@@ -203,19 +209,19 @@ export default function HomeTab() {
 
         <div className="flex gap-4 mt-4">
           <button 
+            onClick={() => setIsExploring(true)}
+            className="flex-1 py-5 border border-dashed border-gray-300 hover:border-blue-500 bg-white rounded-xl flex flex-col items-center justify-center space-y-2 transition-colors text-gray-400 hover:text-blue-500"
+          >
+            <Compass className="w-5 h-5" />
+            <span className="text-xs font-medium">探索计划</span>
+          </button>
+
+          <button 
             onClick={() => setIsCreating(true)}
             className="flex-1 py-5 border border-dashed border-gray-300 hover:border-blue-500 bg-white rounded-xl flex flex-col items-center justify-center space-y-2 transition-colors text-gray-400 hover:text-blue-500"
           >
             <Plus className="w-5 h-5" />
             <span className="text-xs font-medium">新建计划</span>
-          </button>
-          
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex-1 py-5 border border-dashed border-gray-300 hover:border-blue-500 bg-white rounded-xl flex flex-col items-center justify-center space-y-2 transition-colors text-gray-400 hover:text-blue-500"
-          >
-            <Upload className="w-5 h-5" />
-            <span className="text-xs font-medium">导入计划</span>
           </button>
         </div>
 
@@ -227,6 +233,19 @@ export default function HomeTab() {
           className="hidden"
         />
       </div>
+
+      {/* Explore Plans Modal */}
+      {isExploring && (
+        <ExplorePlansModal 
+          onClose={() => setIsExploring(false)}
+          onImportClick={() => {
+            setIsExploring(false);
+            setTimeout(() => {
+              fileInputRef.current?.click();
+            }, 100);
+          }}
+        />
+      )}
 
       {/* Plan Editor Modal */}
       {(isCreating || editingPlanId) && (

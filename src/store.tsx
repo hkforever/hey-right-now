@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { Plan, WorkoutLog, Exercise, defaultExercises, WorkoutItem, MediaItem, WorkoutSet, UserStats } from './types';
 import { auth, db, isCloudBaseConfigured } from './lib/cloudbase';
+import { getCachedStandardExercises, cacheStandardExercises } from './lib/db';
+import { inferExerciseType } from './lib/utils';
 
 interface AppState {
   user: any | null; // CloudBase user object
@@ -9,6 +11,7 @@ interface AppState {
   plans: Plan[];
   history: WorkoutLog[];
   customExercises: Exercise[];
+  standardExercises: Exercise[];
   equipments: string[];
   muscles: string[];
   activeWorkout: WorkoutLog | null;
@@ -47,14 +50,15 @@ interface AppState {
   addMuscle: (name: string) => void;
   updateMuscle: (oldName: string, newName: string) => void;
   deleteMuscle: (name: string) => void;
+  allExercises: Exercise[]; // Added for memoized access
 }
 
 const DEFAULT_EQUIPMENTS = [
-  '徒手', '杠铃', '杠铃片', '壶铃', '器械', '悬挂带', '哑铃', '阻力带', '其他'
+  '自重', '杠铃', '哑铃', '缆绳', '壶铃', '弹力带', '瑜伽球', '医药球', '单杠', '双杠', '史密斯机', '器械', '其他'
 ];
 
 const DEFAULT_MUSCLES = [
-  '背阔肌', '二头肌', '腹肌', '股四头肌', '腘绳肌', '肩部', '颈部', '内收肌', '前臂', '全身', '三头肌', '上背部', '臀大肌', '外展肌', '下背部', '小腿', '斜方肌', '胸部', '有氧运动', '其他'
+  '胸部', '背部', '肩部', '手臂', '核心', '臀部', '大腿', '小腿', '颈部', '全身', '其他'
 ];
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -72,6 +76,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [equipments, setEquipmentsState] = useState<string[]>(DEFAULT_EQUIPMENTS);
   const [muscles, setMusclesState] = useState<string[]>(DEFAULT_MUSCLES);
   const [activeWorkout, setActiveWorkout] = useState<WorkoutLog | null>(null);
+  const [standardExercises, setStandardExercises] = useState<Exercise[]>([]);
   const [isWorkoutMinimized, setIsWorkoutMinimized] = useState(false);
   const [previewLogId, setPreviewLogId] = useState<string | null>(null);
   const [previewExerciseId, setPreviewExerciseId] = useState<string | null>(null);
@@ -80,8 +85,128 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const HISTORY_LIMIT = 20;
 
-  // --- LocalStorage Persistence Layer ---
+  // --- LocalStorage & IndexedDB Persistence Layer ---
   useEffect(() => {
+    const loadExercises = async () => {
+      try {
+        // 1. Try to load from IndexedDB first for "Instant Start"
+        const cached = await getCachedStandardExercises();
+        if (cached && cached.length > 0) {
+          const mapApiCategory = (c: string, b?: string) => {
+            const cat = String(c || '').toLowerCase();
+            const body = String(b || '').toLowerCase();
+            const combined = `${cat} ${body}`;
+            
+            if (combined.includes('cardio') || combined.includes('running') || combined.includes('walking') || combined.includes('hiit')) return '心肺训练';
+            if (combined.includes('stretch') || combined.includes('flexibility') || combined.includes('mobility') || combined.includes('yoga') || combined.includes('warm up')) return '柔韧训练';
+            if (combined.includes('chest')) return '胸部训练';
+            if (combined.includes('back')) return '背部训练';
+            if (combined.includes('shoulder')) return '肩部训练';
+            if (combined.includes('arm') || combined.includes('bicep') || combined.includes('tricep')) return '手臂训练';
+            if (combined.includes('leg') || combined.includes('calf') || combined.includes('glute') || combined.includes('thigh') || combined.includes('quad') || combined.includes('hamstring')) return '腿部训练';
+            if (combined.includes('waist') || combined.includes('abs') || combined.includes('core')) return '核心训练';
+            return '其他';
+          };
+
+          // Defensive mapping in case bad data was cached
+          const sanitized = cached.map((ex: any) => ({
+            ...ex,
+            name: (typeof ex.name === 'object' ? (ex.name?.zh || ex.name?.en) : ex.name) || '',
+            category: (typeof ex.category === 'object' ? (ex.category?.zh || ex.category?.en) : (ex.category ? mapApiCategory(ex.category, ex.primaryMuscle || ex.body_part) : '其他')),
+            equipment: (typeof ex.equipment === 'object' ? (ex.equipment?.zh || ex.equipment?.en) : ex.equipment) || '其他',
+            primaryMuscle: (typeof ex.primaryMuscle === 'object' ? (ex.primaryMuscle?.zh || ex.primaryMuscle?.en) : ex.primaryMuscle) || '其他',
+            secondaryMuscles: Array.isArray(ex.secondaryMuscles) ? ex.secondaryMuscles.map((m: any) => typeof m === 'object' ? (m.zh || m.en) : m) : [],
+            type: inferExerciseType((typeof ex.name === 'object' ? (ex.name?.zh || ex.name?.en) : ex.name) || '', (typeof ex.equipment === 'object' ? (ex.equipment?.zh || ex.equipment?.en) : ex.equipment) || '其他')
+          }));
+          setStandardExercises(sanitized);
+        }
+
+        // 2. Fetch from server ONLY if cache is empty or we are forced to
+        if (!cached || cached.length === 0) {
+          const res = await fetch('/api/exercises');
+          const data = await res.json();
+          
+          if (Array.isArray(data) && data.length > 0) {
+            const mapApiCategory = (c: string, b?: string) => {
+              const cat = String(c || '').toLowerCase();
+              const body = String(b || '').toLowerCase();
+              const combined = `${cat} ${body}`;
+              
+              if (combined.includes('cardio') || combined.includes('running') || combined.includes('walking') || combined.includes('hiit')) return '心肺训练';
+              if (combined.includes('stretch') || combined.includes('flexibility') || combined.includes('mobility') || combined.includes('yoga') || combined.includes('warm up')) return '柔韧训练';
+              if (combined.includes('chest')) return '胸部训练';
+              if (combined.includes('back')) return '背部训练';
+              if (combined.includes('shoulder')) return '肩部训练';
+              if (combined.includes('arm') || combined.includes('bicep') || combined.includes('tricep')) return '手臂训练';
+              if (combined.includes('glute')) return '臀部训练';
+              if (combined.includes('leg') || combined.includes('calf') || combined.includes('thigh') || combined.includes('quad') || combined.includes('hamstring')) return '腿部训练';
+              if (combined.includes('waist') || combined.includes('abs') || combined.includes('core')) return '核心训练';
+              return '其他';
+            };
+
+            const mapMuscleTranslation = (m: any): string => {
+              let muscle = '';
+              let originalZh = '';
+              if (typeof m === 'object') {
+                muscle = (m.en || '').toLowerCase();
+                originalZh = m.zh || '';
+              } else {
+                muscle = String(m || '').toLowerCase();
+              }
+              
+              if (muscle.includes('chest') || muscle.includes('pectoral')) return '胸肌';
+              if (muscle.includes('lats') || muscle.includes('latissimus')) return '背阔肌';
+              if (muscle.includes('traps') || muscle.includes('trapezius')) return '斜方肌';
+              if (muscle.includes('upper back')) return '上背部';
+              if (muscle.includes('lower back')) return '下背部';
+              if (muscle.includes('back')) return '上背部';
+              if (muscle.includes('bicep')) return '肱二头肌';
+              if (muscle.includes('tricep')) return '肱三头肌';
+              if (muscle.includes('forearm')) return '前臂';
+              if (muscle.includes('abs') || muscle.includes('waist') || muscle.includes('rectus abdominis')) return '腹肌';
+              if (muscle.includes('oblique')) return '腹斜肌';
+              if (muscle.includes('shoulder') || muscle.includes('deltoid')) return '三角肌';
+              if (muscle.includes('glute')) return '臀大肌';
+              if (muscle.includes('quad')) return '股四头肌';
+              if (muscle.includes('hamstring')) return '腘绳肌';
+              if (muscle.includes('adductor')) return '内收肌';
+              if (muscle.includes('abductor')) return '内收肌'; 
+              if (muscle.includes('calf') || muscle.includes('gastrocnemius') || muscle.includes('soleus')) return '小腿';
+              if (muscle.includes('neck') || muscle.includes('levator scapulae')) return '颈部';
+              
+              if (originalZh) {
+                if (originalZh === '胸部') return '胸肌';
+                if (originalZh === '背部') return '上背部';
+                if (originalZh === '核心') return '腹肌';
+                if (originalZh === '大腿' || originalZh === '腿部') return '股四头肌';
+                return originalZh;
+              }
+              return muscle || '其他';
+            };
+
+            const mapped = data.map(ex => ({
+              ...ex,
+              name: ex.name?.zh || ex.name?.en || ex.name || '',
+              category: ex.category?.zh || ex.category?.en || mapApiCategory(ex.category || ex.body_part, ex.body_part),
+              equipment: ex.equipment?.zh || ex.equipment?.en || ex.equipment || '其他',
+              primaryMuscle: mapMuscleTranslation(ex.target || ex.body_part),
+              secondaryMuscles: ex.secondary_muscles?.map((m: any) => mapMuscleTranslation(m)) || [],
+              type: inferExerciseType(ex.name?.zh || ex.name?.en || ex.name || '', ex.equipment?.zh || ex.equipment?.en || ex.equipment || '其他'),
+              media: ex.image,
+              videoUrl: ex.gif_url
+            }));
+            
+            setStandardExercises(mapped);
+            await cacheStandardExercises(mapped);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load standard exercises:", err);
+      }
+    };
+
+    loadExercises();
+
     // Initial load from local storage
     const savedPlans = localStorage.getItem('workout_plans');
     const savedHistory = localStorage.getItem('workout_history');
@@ -90,7 +215,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     if (savedPlans) setPlans(JSON.parse(savedPlans));
     if (savedHistory) setHistory(JSON.parse(savedHistory));
-    if (savedExercises) setCustomExercises(JSON.parse(savedExercises));
+    if (savedExercises) {
+      try {
+        const parsed = JSON.parse(savedExercises);
+        if (Array.isArray(parsed)) {
+          setCustomExercises(parsed.map((ex: any) => ({ ...ex, isCustom: true })));
+        }
+      } catch (e) {
+        console.error("Failed to parse saved custom exercises", e);
+      }
+    }
     if (savedSettings) {
       const s = JSON.parse(savedSettings);
       if (s.muscles) setMusclesState(s.muscles);
@@ -99,12 +233,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (s.userStats) setUserStats(s.userStats);
     }
     
-    // Only set as loaded if CloudBase is NOT configured
-    // If it IS configured, we wait for the auth listener to run refreshData
     if (!isCloudBaseConfigured) {
       setIsLoaded(true);
     }
   }, []);
+
+  // Memoized merging logic for best performance
+  const allExercises = useMemo(() => {
+    const mergedExercisesMap = new Map<string, Exercise>();
+    
+    // Merge Strategy: 
+    // Key = Name + Equipment (most unique human-readable pair)
+    // Preference: Custom > Standard > Preset
+    
+    // 1. Presets
+    defaultExercises.forEach(ex => {
+      const key = `${ex.name}_${ex.equipment}`;
+      mergedExercisesMap.set(key, ex);
+    });
+
+    // 2. Standard exercises from server/IndexedDB
+    standardExercises.forEach(ex => {
+      const key = `${ex.name}_${ex.equipment}`;
+      mergedExercisesMap.set(key, ex);
+    });
+    
+    // 3. Custom exercises overwrite ALL
+    customExercises.forEach(ex => {
+      const key = `${ex.name}_${ex.equipment}`;
+      const overriden = mergedExercisesMap.has(key);
+      mergedExercisesMap.set(key, { ...ex, isStandardOverride: overriden });
+    });
+    
+    return Array.from(mergedExercisesMap.values());
+  }, [standardExercises, customExercises]);
 
   // Sync to local storage on changes
   useEffect(() => {
@@ -175,7 +337,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (exercisesRes.data) {
-        const data = exercisesRes.data.map((doc: any) => ({ ...doc, id: doc._id || doc.id } as unknown as Exercise));
+        const data = exercisesRes.data.map((doc: any) => {
+          const ex = { ...doc, id: doc._id || doc.id } as any;
+          return {
+            ...ex,
+            isCustom: true,
+            name: (typeof ex.name === 'object' ? (ex.name?.zh || ex.name?.en) : ex.name) || '',
+            category: (typeof ex.category === 'object' ? (ex.category?.zh || ex.category?.en) : ex.category) || '其他',
+            equipment: (typeof ex.equipment === 'object' ? (ex.equipment?.zh || ex.equipment?.en) : ex.equipment) || '其他',
+            primaryMuscle: (typeof ex.primaryMuscle === 'object' ? (ex.primaryMuscle?.zh || ex.primaryMuscle?.en) : ex.primaryMuscle) || '其他',
+            secondaryMuscles: Array.isArray(ex.secondaryMuscles) ? ex.secondaryMuscles.map((m: any) => typeof m === 'object' ? (m.zh || m.en) : m) : [],
+            type: ['weight_reps', 'reps_only', 'weighted_bodyweight', 'assisted_bodyweight', 'time', 'time_weight', 'distance_time', 'weight_distance'].includes(ex.type) ? ex.type : inferExerciseType((typeof ex.name === 'object' ? (ex.name?.zh || ex.name?.en) : ex.name) || '', (typeof ex.equipment === 'object' ? (ex.equipment?.zh || ex.equipment?.en) : ex.equipment) || '其他')
+          } as Exercise;
+        });
         setCustomExercises(data);
       }
 
@@ -336,7 +510,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             query: db.collection('customExercises').where({ userId: targetUid }),
             onChange: (snapshot: any) => {
               if (snapshot.docs) {
-                const data = snapshot.docs.map((doc: any) => ({ ...doc, id: doc._id || doc.id } as unknown as Exercise));
+                const data = snapshot.docs.map((doc: any) => {
+                  const ex = { ...doc, id: doc._id || doc.id } as any;
+                  return {
+                    ...ex,
+                    isCustom: true,
+                    name: (typeof ex.name === 'object' ? (ex.name?.zh || ex.name?.en) : ex.name) || '',
+                    category: (typeof ex.category === 'object' ? (ex.category?.zh || ex.category?.en) : ex.category) || '其他',
+                    equipment: (typeof ex.equipment === 'object' ? (ex.equipment?.zh || ex.equipment?.en) : ex.equipment) || '其他',
+                    primaryMuscle: (typeof ex.primaryMuscle === 'object' ? (ex.primaryMuscle?.zh || ex.primaryMuscle?.en) : ex.primaryMuscle) || '其他',
+                    secondaryMuscles: Array.isArray(ex.secondaryMuscles) ? ex.secondaryMuscles.map((m: any) => typeof m === 'object' ? (m.zh || m.en) : m) : [],
+                    type: ['weight_reps', 'reps_only', 'weighted_bodyweight', 'assisted_bodyweight', 'time', 'time_weight', 'distance_time', 'weight_distance'].includes(ex.type) ? ex.type : inferExerciseType((typeof ex.name === 'object' ? (ex.name?.zh || ex.name?.en) : ex.name) || '', (typeof ex.equipment === 'object' ? (ex.equipment?.zh || ex.equipment?.en) : ex.equipment) || '其他')
+                  } as Exercise;
+                });
                 setCustomExercises(data);
                 failCount = 0;
               }
@@ -368,8 +554,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               }
             });
             watchers.push(w);
-            // Stagger connections even more (5s) to reduce burst pressure on WebSocket
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            // Stagger connections to reduce burst pressure, but much faster now
+            await new Promise(resolve => setTimeout(resolve, 500));
           } catch (e) {
             handleWatchError(e);
           }
@@ -621,23 +807,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       startTime: Date.now(),
       volume: 0,
       sections: plan?.sections,
-      items: plan ? plan.items.map(item => {
+      items: plan ? (plan.items || []).map(item => {
         let previousSets: WorkoutSet[] = [];
         if (history.length > 0) {
           const lastLogWithExercise = history.find(log => 
             log.planId === plan.id && 
             log.endTime && 
-            log.items.some(i => i.exerciseId === item.exerciseId)
+            (log.items || []).some(i => i.exerciseId === item.exerciseId)
           );
           if (lastLogWithExercise) {
-            const previousExerciseItem = lastLogWithExercise.items.find(i => i.exerciseId === item.exerciseId);
+            const previousExerciseItem = (lastLogWithExercise.items || []).find(i => i.exerciseId === item.exerciseId);
             if (previousExerciseItem && previousExerciseItem.sets) {
               previousSets = previousExerciseItem.sets;
             }
           }
         }
 
-          let sets = item.targetSets.map((set, index) => {
+          const targetSetsRef = item.targetSets || [];
+          
+          let sets = targetSetsRef.map((set, index) => {
             const prevSet = previousSets[index] || previousSets[previousSets.length - 1];
             if (prevSet) {
               return {
@@ -655,11 +843,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
           // If the user performed more sets in the previous workout than what's in the template, 
           // append those extra sets so the initial set count matches the actual history exactly.
-          if (previousSets.length > item.targetSets.length) {
-            for (let i = item.targetSets.length; i < previousSets.length; i++) {
+          if (previousSets.length > targetSetsRef.length) {
+            for (let i = targetSetsRef.length; i < previousSets.length; i++) {
               const prevSet = previousSets[i];
               sets.push({
-                ...item.targetSets[item.targetSets.length - 1], // Copy template for fields like type/restTime
+                setType: 'normal',
+                ...(targetSetsRef.length > 0 ? targetSetsRef[targetSetsRef.length - 1] : {}), // Copy template for fields like type/restTime
                 id: crypto.randomUUID(),
                 completed: false,
                 weight: prevSet.weight,
@@ -668,7 +857,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 distance: prevSet.distance,
               });
             }
-          } else if (previousSets.length > 0 && previousSets.length < item.targetSets.length) {
+          } else if (previousSets.length > 0 && previousSets.length < targetSetsRef.length) {
              // If they did FEWER sets last time, we should still just give them the template length, 
              // but maybe they explicitly want exactly the same number of sets. However, usually plans dictate a minimum.
              // We'll leave the extra sets from the template as they are (handled by the map with fallback above).
@@ -715,11 +904,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addCustomExercise = async (exercise: Exercise) => {
     const uid = String(ensureUser());
-    const { id, _id, ...cleanObj } = cleanData(exercise) as any;
+    // Ensure ID isolation: Custom exercises should have a 'CUSTOM_' prefix
+    const finalId = exercise.id.startsWith('CUSTOM_') ? exercise.id : `CUSTOM_${exercise.id}`;
+    const isolatedExercise = { ...exercise, id: finalId, isCustom: true };
+    
+    const { id, _id, ...cleanObj } = cleanData(isolatedExercise) as any;
     const data = { ...cleanObj, userId: uid };
-    setCustomExercises(prev => [...prev, exercise]); // Local update
+    setCustomExercises(prev => [...prev.filter(ex => ex.id !== finalId), isolatedExercise]); 
     try {
-      await withRetry(() => db.collection('customExercises').doc(exercise.id).set(data));
+      await withRetry(() => db.collection('customExercises').doc(finalId).set(data));
     } catch (err) {
       console.error('[TCB] addCustomExercise failed after retries:', err);
       throw err;
@@ -792,7 +985,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider value={{
       user, isLoaded, isAuthReady,
-      plans, history, customExercises, equipments, muscles, activeWorkout,
+      plans, history, customExercises, standardExercises, equipments, muscles, activeWorkout,
       isWorkoutMinimized, setIsWorkoutMinimized,
       previewLogId, setPreviewLogId,
       previewExerciseId, setPreviewExerciseId,
@@ -802,7 +995,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addPlan, updatePlan, deletePlan, addWorkoutLog, updateWorkoutLog, deleteWorkoutLog,
       startWorkout, updateActiveWorkout, endActiveWorkout, cancelActiveWorkout,
       addCustomExercise, updateCustomExercise, deleteCustomExercise, setEquipments, addEquipment, updateEquipment, deleteEquipment,
-      setMuscles, addMuscle, updateMuscle, deleteMuscle
+      setMuscles, addMuscle, updateMuscle, deleteMuscle,
+      allExercises
     }}>
       {children}
     </AppContext.Provider>
@@ -816,37 +1010,22 @@ export function useAppStore() {
 }
 
 export function useAppData() {
-  const { customExercises, history } = useAppStore();
-  
-  // Merge: prefer custom exercises with same name + equipment
-  const mergedExercisesMap = new Map<string, Exercise>();
-  
-  // First add all defaults
-  defaultExercises.forEach(ex => {
-    const key = `${ex.name}_${ex.equipment}`;
-    mergedExercisesMap.set(key, ex);
-  });
-  
-  // Then overwrite with custom ones if they match by name+equipment
-  // or add them if they are unique
-  customExercises.forEach(ex => {
-    const key = `${ex.name}_${ex.equipment}`;
-    mergedExercisesMap.set(key, ex);
-  });
-  
-  const allExercises = Array.from(mergedExercisesMap.values());
+  const { customExercises, history, allExercises, standardExercises } = useAppStore();
   
   const getExercise = (id: string) => {
-    // Search in merged list (covers case where ID changed due to customization)
-    const found = allExercises.find(e => e.id === id);
-    if (found) return found;
-    
-    // Fallback: if we are looking for a standard ID but it has been overridden
-    // Find if any custom exercise "inherited" from it (same name+equipment)
-    const standard = defaultExercises.find(e => e.id === id);
+    // 1. Direct match in the merged list (fastest)
+    const direct = allExercises.find(e => e.id === id);
+    if (direct) return direct;
+
+    // 2. Fallback: if we are looking for a standard ID but it has been overridden
+    // Find the standard exercise first
+    const standard = standardExercises.find(e => e.id === id) || defaultExercises.find(e => e.id === id);
     if (standard) {
+      // Find the merged version by Name + Equipment
       const key = `${standard.name}_${standard.equipment}`;
-      return mergedExercisesMap.get(key) || standard;
+      const overridden = allExercises.find(e => `${e.name}_${e.equipment}` === key);
+      if (overridden) return overridden;
+      return standard;
     }
     
     return undefined;

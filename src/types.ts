@@ -39,12 +39,19 @@ export interface Exercise {
   name: string;
   type: ExerciseType;
   equipment: string;
+  category: string;
   primaryMuscle: string;
   secondaryMuscles: string[];
   isCustom?: boolean;
+  isStandardOverride?: boolean;
   media?: string; // This will remain as the thumbnail/primary image
   videoUrl?: string; // Legacy single video
   videos?: { url: string; title?: string }[]; // New multiple videos
+  videos_zh?: { url: string; title?: string }[]; // Optional Chinese titles
+  instruction_steps?: {
+    en?: string[];
+    zh?: string[];
+  };
 }
 
 export type SetType = 'normal' | 'warmup' | 'drop' | 'failure';
@@ -64,6 +71,7 @@ export interface WorkoutSet {
 export interface PlanItem {
   id: string;
   exerciseId: string;
+  type?: ExerciseType; // Override exercise type
   notes: string;
   restTime: number; // in seconds
   targetSets: WorkoutSet[];
@@ -86,6 +94,7 @@ export interface Plan {
 export interface WorkoutItem {
   id: string;
   exerciseId: string;
+  type?: ExerciseType; // Override exercise type
   notes: string;
   restTime: number;
   sets: WorkoutSet[];
@@ -110,21 +119,4 @@ export interface WorkoutLog {
   mediaItems?: MediaItem[];
 }
 
-export const defaultExercises: Exercise[] = [
-  { id: 'preset_foam_rolling', name: "泡沫轴滚动", type: "time", equipment: "泡沫轴", primaryMuscle: "全身", secondaryMuscles: [] },
-  { id: 'preset_90_90_breathing', name: "90/90呼吸训练", type: "reps_only", equipment: "徒手", primaryMuscle: "腹肌", secondaryMuscles: [] },
-  { id: 'preset_cat_cow', name: "猫牛式屈伸", type: "reps_only", equipment: "徒手", primaryMuscle: "下背部", secondaryMuscles: ["腹肌"] },
-  { id: 'preset_deadbug', name: "死虫式", type: "reps_only", equipment: "徒手", primaryMuscle: "腹肌", secondaryMuscles: [] },
-  { id: 'preset_thoracic_rotation', name: "胸椎旋转", type: "reps_only", equipment: "徒手", primaryMuscle: "上背部", secondaryMuscles: [] },
-  { id: 'preset_palof_press', name: "帕洛夫抗旋推举", type: "reps_only", equipment: "阻力带", primaryMuscle: "腹肌", secondaryMuscles: ["肩部"] },
-  { id: 'preset_dead_hang', name: "双臂悬挂", type: "time", equipment: "悬挂带", primaryMuscle: "前臂", secondaryMuscles: ["背阔肌"] },
-  { id: 'preset_squat_barbell', name: "深蹲（杠铃）", type: "weight_reps", equipment: "杠铃", primaryMuscle: "股四头肌", secondaryMuscles: ["臀大肌", "腘绳肌"] },
-  { id: 'preset_bench_press_dumbbell', name: "卧推（哑铃）", type: "weight_reps", equipment: "哑铃", primaryMuscle: "胸部", secondaryMuscles: ["三头肌", "肩部"] },
-  { id: 'preset_bent_over_row_barbell', name: "俯身划船（杠铃）", type: "weight_reps", equipment: "杠铃", primaryMuscle: "背阔肌", secondaryMuscles: ["上背部", "二头肌"] },
-  { id: 'preset_lateral_raise_dumbbell', name: "侧平举（哑铃）", type: "weight_reps", equipment: "哑铃", primaryMuscle: "肩部", secondaryMuscles: [] },
-  { id: 'preset_cable_crunch', name: "滑轮卷腹", type: "weight_reps", equipment: "器械", primaryMuscle: "腹肌", secondaryMuscles: [] },
-  { id: 'preset_psoas_stretch', name: "髂腰肌拉伸", type: "time", equipment: "徒手", primaryMuscle: "其他", secondaryMuscles: [] },
-  { id: 'preset_chest_stretch', name: "门框/墙角扩胸", type: "time", equipment: "徒手", primaryMuscle: "胸部", secondaryMuscles: [] },
-  { id: 'preset_stomach_vacuum', name: "真空腹练习", type: "time", equipment: "徒手", primaryMuscle: "腹肌", secondaryMuscles: [] },
-  { id: 'preset_kegel_cool', name: "静态凯格尔冷却", type: "reps_only", equipment: "徒手", primaryMuscle: "其他", secondaryMuscles: [] }
-];
+export const defaultExercises: Exercise[] = [];

@@ -4,6 +4,7 @@ import { X, Check, Image as ImageIcon, ChevronRight, Video, Plus, Trash2, Link a
 import { Exercise, ExerciseType } from '../types';
 import { uploadFile, isCloudBaseConfigured } from '../lib/cloudbase';
 import CloudMedia from './CloudMedia';
+import { MUSCLE_HIERARCHY } from '../lib/muscle-utils';
 import { resizeImage } from '../lib/image-utils';
 
 const EXERCISE_TYPES: { id: ExerciseType; label: string; example: string; badges: string[] }[] = [
@@ -55,7 +56,8 @@ export default function CustomExerciseForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeSheet, setActiveSheet] = useState<'type' | 'equipment' | 'primary' | 'secondary' | null>(null);
+  const [category, setCategory] = useState<string | null>(initialExercise?.category || null);
+  const [activeSheet, setActiveSheet] = useState<'type' | 'equipment' | 'primary' | 'secondary' | 'category' | null>(null);
 
   const [isAddingLink, setIsAddingLink] = useState(false);
   const [newLink, setNewLink] = useState('');
@@ -135,6 +137,7 @@ export default function CustomExerciseForm({
       id: initialExercise?.id || `custom_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       name,
       type,
+      category: category || '其他',
       equipment,
       primaryMuscle,
       secondaryMuscles,
@@ -336,6 +339,19 @@ export default function CustomExerciseForm({
             </button>
 
             <button 
+              onClick={() => setActiveSheet('category')}
+              className="w-full px-4 py-4 flex items-center justify-between active:bg-gray-50 transition-colors"
+            >
+              <div className="flex flex-col text-left">
+                <span className="text-gray-900 font-bold">运动分类</span>
+                <span className={category ? "text-sm text-gray-500 mt-0.5" : "text-sm text-gray-400 mt-0.5 italic"}>
+                  {category || '请选择分类'}
+                </span>
+              </div>
+              <ChevronRight className="w-5 h-5 text-gray-300" />
+            </button>
+
+            <button 
               onClick={() => setActiveSheet('primary')}
               className="w-full px-4 py-4 flex items-center justify-between active:bg-gray-50 transition-colors"
             >
@@ -375,6 +391,7 @@ export default function CustomExerciseForm({
             <span className="font-bold text-base text-gray-900 hidden sm:block">
               {activeSheet === 'type' ? '运动类型' : 
                activeSheet === 'equipment' ? '选择设备' : 
+               activeSheet === 'category' ? '选择分类' :
                activeSheet === 'primary' ? '主要肌肉群' : '其他肌肉'}
             </span>
             <div className="w-10"></div> {/* Placeholder */}
@@ -419,45 +436,77 @@ export default function CustomExerciseForm({
                </div>
             )}
 
-            {activeSheet === 'primary' && (
+            {activeSheet === 'category' && (
                <div className="p-2 space-y-1">
-                 {muscles.map(m => (
+                 {[
+                   '核心训练', '胸部训练', '背部训练', '肩部训练', '手臂训练', 
+                   '腿部训练', '腰部训练', '心肺训练', '柔韧训练', '其他'
+                 ].map(c => (
                    <button 
-                     key={m}
-                     onClick={() => { 
-                       setPrimaryMuscle(m); 
-                       if (secondaryMuscles.includes(m)) {
-                         setSecondaryMuscles(prev => prev.filter(x => x !== m));
-                       }
-                       setActiveSheet(null); 
-                     }}
+                     key={c}
+                     onClick={() => { setCategory(c); setActiveSheet(null); }}
                      className="w-full text-left px-4 py-4 flex items-center justify-between active:bg-gray-50 transition-colors rounded-xl"
                    >
-                     <span className={`text-base font-bold ${primaryMuscle === m ? 'text-blue-500' : 'text-gray-900'}`}>{m}</span>
-                     {primaryMuscle === m && <Check className="w-5 h-5 text-blue-500" />}
+                     <span className={`text-base font-bold ${category === c ? 'text-blue-500' : 'text-gray-900'}`}>{c}</span>
+                     {category === c && <Check className="w-5 h-5 text-blue-500" />}
                    </button>
                  ))}
                </div>
             )}
 
+            {activeSheet === 'primary' && (
+              <div className="p-2 space-y-4">
+                {MUSCLE_HIERARCHY.map((group) => (
+                  <div key={group.name} className="space-y-1">
+                    <div className="px-4 py-1 text-xs font-bold text-gray-400 uppercase tracking-widest">{group.name}</div>
+                    <div className="grid grid-cols-2 gap-1 px-1">
+                      {group.muscles.map((ms) => (
+                        <button
+                          key={ms.name}
+                          onClick={() => {
+                            setPrimaryMuscle(ms.name);
+                            if (secondaryMuscles.includes(ms.name)) {
+                              setSecondaryMuscles(prev => prev.filter(x => x !== ms.name));
+                            }
+                            setActiveSheet(null);
+                          }}
+                          className={`text-left px-4 py-3 flex items-center justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors rounded-xl border ${primaryMuscle === ms.name ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-transparent text-gray-700'}`}
+                        >
+                          <span className="text-sm font-semibold truncate">{ms.name}</span>
+                          {primaryMuscle === ms.name && <Check className="w-4 h-4 text-blue-500 shrink-0" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {activeSheet === 'secondary' && (
-               <div className="p-2 space-y-1">
-                 {muscles.filter(m => m !== primaryMuscle).map(m => {
-                   const isSelected = secondaryMuscles.includes(m);
-                   return (
-                     <button 
-                       key={m}
-                       onClick={() => toggleSecondaryMuscle(m)}
-                       className="w-full text-left px-4 py-4 flex items-center justify-between active:bg-gray-50 transition-colors rounded-xl"
-                     >
-                       <span className={`text-base font-bold ${isSelected ? 'text-blue-500' : 'text-gray-900'}`}>{m}</span>
-                       <div className={`w-5 h-5 rounded-full flex items-center justify-center border ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'}`}>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
-                       </div>
-                     </button>
-                   );
-                 })}
-               </div>
+              <div className="p-2 space-y-4">
+                {MUSCLE_HIERARCHY.map((group) => (
+                  <div key={group.name} className="space-y-1">
+                    <div className="px-4 py-1 text-xs font-bold text-gray-400 uppercase tracking-widest">{group.name}</div>
+                    <div className="grid grid-cols-2 gap-1 px-1">
+                      {group.muscles.filter(m => m.name !== primaryMuscle).map((ms) => {
+                        const isSelected = secondaryMuscles.includes(ms.name);
+                        return (
+                          <button
+                            key={ms.name}
+                            onClick={() => toggleSecondaryMuscle(ms.name)}
+                            className={`text-left px-4 py-3 flex items-center justify-between hover:bg-gray-50 active:bg-gray-100 transition-colors rounded-xl border ${isSelected ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-transparent text-gray-700'}`}
+                          >
+                            <span className="text-sm font-semibold truncate">{ms.name}</span>
+                            <div className={`w-4 h-4 rounded-full flex items-center justify-center border ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-200 shadow-inner'}`}>
+                              {isSelected && <Check className="w-3 h-3 text-white" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
 
           </main>

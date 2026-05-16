@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { X, Settings, ChevronRight, ScrollText, LogOut, Sparkles, Shield, Info } from 'lucide-react';
+import { X, Settings, ChevronRight, ScrollText, LogOut, Sparkles, Shield, Info, Calendar } from 'lucide-react';
 import { useAppStore } from '../store';
 import ChangelogModal from './ChangelogModal';
 import IllustrationGeneratorModal from './IllustrationGeneratorModal';
 import BodyStatsModal from './BodyStatsModal';
+import WorkoutCalendarModal from './WorkoutCalendarModal';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [showChangelog, setShowChangelog] = useState(false);
   const [showIllustrationGenerator, setShowIllustrationGenerator] = useState(false);
   const [showBodyStats, setShowBodyStats] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   if (!isOpen) return null;
@@ -35,6 +37,13 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     {
       title: '功能工具',
       items: [
+        {
+          id: 'workout-calendar',
+          title: '训练日历',
+          icon: <Calendar className="w-5 h-5 text-blue-500" />,
+          onClick: () => setShowCalendar(true),
+          description: '月、年、多年维度的训练回顾'
+        },
         {
           id: 'ai-gen',
           title: 'AI 运动示意图生成',
@@ -152,6 +161,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       <BodyStatsModal
         isOpen={showBodyStats}
         onClose={() => setShowBodyStats(false)}
+      />
+
+      <WorkoutCalendarModal 
+        isOpen={showCalendar}
+        onClose={() => setShowCalendar(false)}
       />
 
       {/* Logout Confirmation */}

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { AppProvider, useAppStore } from './store';
 import HomeTab from './components/HomeTab';
 import MeTab from './components/MeTab';
@@ -7,6 +8,8 @@ import MinimizedWorkoutBar from './components/MinimizedWorkoutBar';
 import WorkoutLogDetail from './components/WorkoutLogDetail';
 import { Dumbbell, User } from 'lucide-react';
 import { cn } from './lib/utils';
+import { changelog } from './components/ChangelogModal';
+import AdminApp from './admin/AdminApp';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'home' | 'me'>('home');
@@ -86,9 +89,17 @@ function AppContent() {
           )}
         </div>
         
-        <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
-          CloudBase 云端支持
-        </p>
+        <div className="flex flex-col items-center space-y-2 opacity-60">
+          <p className="text-[10px] text-gray-400 capitalize tracking-widest font-bold">
+            v{changelog[0].version}
+          </p>
+          <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+            CloudBase 云端支持
+          </p>
+          <p className="text-[10px] text-gray-400 font-medium">
+            京ICP备2026025144号-1
+          </p>
+        </div>
       </div>
     );
   }
@@ -172,9 +183,14 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <BrowserRouter>
+      <AppProvider>
+        <Routes>
+          <Route path="/" element={<AppContent />} />
+          <Route path="/admin" element={<AdminApp />} />
+        </Routes>
+      </AppProvider>
+    </BrowserRouter>
   );
 }
 
