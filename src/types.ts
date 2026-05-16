@@ -52,6 +52,8 @@ export interface Exercise {
     en?: string[];
     zh?: string[];
   };
+  instructions?: string;
+  aliases?: string[];
 }
 
 export type SetType = 'normal' | 'warmup' | 'drop' | 'failure';

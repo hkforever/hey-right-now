@@ -1,9 +1,9 @@
 import { openDB, IDBPDatabase } from 'idb';
 import { Exercise } from '../types';
 
-const DB_NAME = 'workout_app_db';
+const DB_NAME = 'workout_app_db_v2';
 const STORE_NAME = 'standard_exercises';
-const VERSION = 1;
+const VERSION = 6;
 
 interface WorkoutDB {
   [STORE_NAME]: {
@@ -17,7 +17,10 @@ let dbPromise: Promise<IDBPDatabase<WorkoutDB>> | null = null;
 const getDB = () => {
   if (!dbPromise) {
     dbPromise = openDB<WorkoutDB>(DB_NAME, VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 6 && db.objectStoreNames.contains(STORE_NAME)) {
+          db.deleteObjectStore(STORE_NAME);
+        }
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         }

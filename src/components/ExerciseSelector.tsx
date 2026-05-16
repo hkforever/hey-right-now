@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useAppData, useAppStore } from '../store';
 import { X, Search, Check, Plus, Pencil, Trash2, Menu, ChevronDown, User } from 'lucide-react';
 import CustomExerciseForm from './CustomExerciseForm';
@@ -7,6 +7,21 @@ import ExerciseDetailModal from './ExerciseDetailModal';
 import { muscleMapping, MUSCLE_HIERARCHY } from '../lib/muscle-utils';
 import { Reorder } from 'motion/react';
 import { Exercise } from '../types';
+import PinyinMatch from 'pinyin-match';
+
+import { pinyin } from 'pinyin-pro';
+
+const matchSearch = (ex: Exercise, term: string, tPinyin: string) => {
+  if (!term) return true;
+  const t = term; // assuming term is already toLowerCase().trim()
+  
+  if (ex.name.toLowerCase().includes(t)) return true;
+  if (PinyinMatch.match(ex.name, t) || PinyinMatch.match(ex.name, tPinyin)) return true;
+  
+  if (ex.aliases?.some(a => a.toLowerCase().includes(t) || PinyinMatch.match(a, t) || PinyinMatch.match(a, tPinyin))) return true;
+  
+  return false;
+};
 
 export default function ExerciseSelector({ onClose, onAdd }: { onClose: () => void, onAdd: (ids: string[]) => void }) {
   const { allExercises, getExercise } = useAppData();
@@ -17,15 +32,8 @@ export default function ExerciseSelector({ onClose, onAdd }: { onClose: () => vo
   } = useAppStore();
   
   const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
-
-  // Debounce search input
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+  const deferredSearch = useDeferredValue(searchInput);
+  const search = deferredSearch;
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isCreatingCustom, setIsCreatingCustom] = useState(false);
@@ -143,75 +151,77 @@ export default function ExerciseSelector({ onClose, onAdd }: { onClose: () => vo
   };
 
   // --- Dynamic Pool Calculation (Linked Filtering) ---
+  const exercisesMatchingSearch = useMemo(() => {
+    if (!search) return allExercises;
+    const t = search.toLowerCase().trim();
+    const tPinyin = pinyin(t, { toneType: 'none', type: 'array' }).join('').replace(/\s+/g, '');
+    return allExercises.filter(e => matchSearch(e, t, tPinyin));
+  }, [allExercises, search]);
+
   const poolForEquipment = useMemo(() => {
-    return allExercises.filter(e => {
-      const matchesSearch = e.name.toLowerCase().includes(search.toLowerCase());
+    return exercisesMatchingSearch.filter(e => {
       const matchesMuscle = matchesMs(e, muscleFilter);
       const matchesCategory = matchesCat(e, categoryFilter);
-      return matchesSearch && matchesMuscle && matchesCategory;
+      return matchesMuscle && matchesCategory;
     });
-  }, [allExercises, search, muscleFilter, categoryFilter]);
+  }, [exercisesMatchingSearch, muscleFilter, categoryFilter]);
 
   const poolForMuscle = useMemo(() => {
-    return allExercises.filter(e => {
-      const matchesSearch = e.name.toLowerCase().includes(search.toLowerCase());
+    return exercisesMatchingSearch.filter(e => {
       const matchesEquipment = matchesEq(e, equipmentFilter);
       const matchesCategory = matchesCat(e, categoryFilter);
-      return matchesSearch && matchesEquipment && matchesCategory;
+      return matchesEquipment && matchesCategory;
     });
-  }, [allExercises, search, equipmentFilter, categoryFilter]);
+  }, [exercisesMatchingSearch, equipmentFilter, categoryFilter]);
 
   const poolForCategory = useMemo(() => {
-    return allExercises.filter(e => {
-      const matchesSearch = e.name.toLowerCase().includes(search.toLowerCase());
+    return exercisesMatchingSearch.filter(e => {
       const matchesEquipment = matchesEq(e, equipmentFilter);
       const matchesMuscle = matchesMs(e, muscleFilter);
-      return matchesSearch && matchesEquipment && matchesMuscle;
+      return matchesEquipment && matchesMuscle;
     });
-  }, [allExercises, search, equipmentFilter, muscleFilter]);
+  }, [exercisesMatchingSearch, equipmentFilter, muscleFilter]);
 
-  // --- Visibility Checkers ---
-  const isEquipmentVisible = (f: string) => {
-    if (f === '所有设备') return true;
-    return poolForEquipment.some(e => matchesEq(e, f));
-  };
-
-  const isMuscleVisible = (f: string) => {
-    if (f === '所有肌肉') return true;
-    return poolForMuscle.some(e => matchesMs(e, f));
-  };
-
-  const isCategoryVisible = (f: string) => {
-    if (f === '所有运动') return true;
-    return poolForCategory.some(e => matchesCat(e, f));
-  };
-
-  // --- Count Calculators ---
-  const getEquipmentCount = (f: string) => {
-    if (f === '所有设备') return poolForEquipment.length;
-    return poolForEquipment.filter(e => matchesEq(e, f)).length;
-  };
-
-  const getMuscleCount = (f: string) => {
-    if (f === '所有肌肉') return poolForMuscle.length;
-    return poolForMuscle.filter(e => matchesMs(e, f)).length;
-  };
-
-  const getCategoryCount = (f: string) => {
-    if (f === '所有运动') return poolForCategory.length;
-    return poolForCategory.filter(e => matchesCat(e, f)).length;
-  };
-
-  // Final result list filtered by all 4 facets
-  const baseFiltered = useMemo(() => {
-    return allExercises.filter(e => {
-      const matchesSearch = e.name.toLowerCase().includes(search.toLowerCase());
-      const matchesEquipment = matchesEq(e, equipmentFilter);
-      const matchesMuscle = matchesMs(e, muscleFilter);
-      const matchesCategory = matchesCat(e, categoryFilter);
-      return matchesSearch && matchesEquipment && matchesMuscle && matchesCategory;
+  // --- Cache equipment/muscle/category results ---
+  const equipmentVisibilityAndCounts = useMemo(() => {
+    const visible = new Set<string>();
+    const counts: Record<string, number> = {};
+    const allEqFilters = EQUIPMENT_STRUCTURE.flatMap(g => g.items).concat(equipments).concat(['所有设备']);
+    
+    allEqFilters.forEach(f => {
+      let count = 0;
+      if (f === '所有设备') {
+        count = poolForEquipment.length;
+        visible.add(f);
+      } else {
+        count = poolForEquipment.filter(e => matchesEq(e, f)).length;
+        if (count > 0) visible.add(f);
+      }
+      counts[f] = count;
     });
-  }, [allExercises, search, equipmentFilter, muscleFilter, categoryFilter]);
+    return { visible, counts };
+  }, [poolForEquipment, equipments]);
+
+  const muscleVisibilityAndCounts = useMemo(() => {
+    const visible = new Set<string>();
+    const counts: Record<string, number> = {};
+    const allMsFilters = MUSCLE_HIERARCHY.map(g => g.name).concat(
+      MUSCLE_HIERARCHY.flatMap(g => g.muscles.map(m => m.name))
+    ).concat(muscles).concat(['所有肌肉']);
+    
+    allMsFilters.forEach(f => {
+      let count = 0;
+      if (f === '所有肌肉') {
+         count = poolForMuscle.length;
+         visible.add(f);
+      } else {
+         count = poolForMuscle.filter(e => matchesMs(e, f)).length;
+         if (count > 0) visible.add(f);
+      }
+      counts[f] = count;
+    });
+    return { visible, counts };
+  }, [poolForMuscle, muscles]);
 
   // Dynamic counts for Category Filter
   const categoryCounts = useMemo(() => {
@@ -224,8 +234,29 @@ export default function ExerciseSelector({ onClose, onAdd }: { onClose: () => vo
       else if (cat === '小腿训练' || cat === '臀部训练') cat = '腿部训练';
       counts[cat] = (counts[cat] || 0) + 1;
     });
+    counts['所有运动'] = poolForCategory.length;
     return counts;
   }, [poolForCategory]);
+
+  // --- Visibility Checkers ---
+  const isEquipmentVisible = (f: string) => equipmentVisibilityAndCounts.visible.has(f);
+  const isMuscleVisible = (f: string) => muscleVisibilityAndCounts.visible.has(f);
+  const isCategoryVisible = (f: string) => categoryCounts[f] > 0 || f === '所有运动';
+
+  // --- Count Calculators ---
+  const getEquipmentCount = (f: string) => equipmentVisibilityAndCounts.counts[f] || 0;
+  const getMuscleCount = (f: string) => muscleVisibilityAndCounts.counts[f] || 0;
+  const getCategoryCount = (f: string) => categoryCounts[f] || 0;
+
+  // Final result list filtered by all 4 facets
+  const baseFiltered = useMemo(() => {
+    return exercisesMatchingSearch.filter(e => {
+      const matchesEquipment = matchesEq(e, equipmentFilter);
+      const matchesMuscle = matchesMs(e, muscleFilter);
+      const matchesCategory = matchesCat(e, categoryFilter);
+      return matchesEquipment && matchesMuscle && matchesCategory;
+    });
+  }, [exercisesMatchingSearch, equipmentFilter, muscleFilter, categoryFilter]);
 
   const categories = useMemo(() => {
     // These are the canonical display categories we want
@@ -343,7 +374,7 @@ export default function ExerciseSelector({ onClose, onAdd }: { onClose: () => vo
   // Infinite scroll logic for "All Exercises"
   useEffect(() => {
     // Reset display limit and scroll to top when filters/search change
-    setAllDisplayLimit(isSearching ? 500 : 100);
+    setAllDisplayLimit(50);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
@@ -351,10 +382,10 @@ export default function ExerciseSelector({ onClose, onAdd }: { onClose: () => vo
 
   useEffect(() => {
     const handleScroll = () => {
-      if (!scrollContainerRef.current || isSearching) return;
+      if (!scrollContainerRef.current) return;
       const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
       if (scrollTop + clientHeight >= scrollHeight - 300) {
-        setAllDisplayLimit(prev => Math.min(prev + 100, allExercisesSorted.length));
+        setAllDisplayLimit(prev => Math.min(prev + 50, allExercisesSorted.length));
       }
     };
 
@@ -446,9 +477,14 @@ export default function ExerciseSelector({ onClose, onAdd }: { onClose: () => vo
             <span className="font-semibold text-gray-900 text-base">
               <HighlightText text={ex.name} highlight={search} />
             </span>
+            {search && ex.aliases?.some(a => a.toLowerCase().includes(search.toLowerCase())) && !ex.name.toLowerCase().includes(search.toLowerCase()) && (
+              <span className="text-xs text-gray-400 font-normal mt-0.5">
+                (别名: <HighlightText text={ex.aliases.find(a => a.toLowerCase().includes(search.toLowerCase())) || ''} highlight={search} />)
+              </span>
+            )}
           </div>
-          <span className="text-xs text-gray-500 mt-0.5">
-            <HighlightText text={ex.primaryMuscle || '其他'} highlight={search} />
+          <span className="text-xs text-gray-500 mt-0.5 line-clamp-1">
+            <HighlightText text={ex.instructions || ex.primaryMuscle || '其他'} highlight={search} />
           </span>
         </div>
       </div>

@@ -237,7 +237,21 @@ export default function PlanEditor({ planId, onClose }: { planId: string | null,
           </button>
         </div>
         
-        <div className="text-sm text-gray-400 px-4 ml-12 mb-2">在此处添加计划备注</div>
+        {ex?.instructions && (
+          <div className="text-xs text-gray-500 px-4 ml-12 mb-3 leading-relaxed">
+            {ex.instructions}
+          </div>
+        )}
+        
+        <div className="flex px-4 ml-12 mb-2 w-full pr-8 box-border">
+          <input
+            type="text"
+            className="text-sm text-gray-700 bg-transparent outline-none w-full border-b border-dashed border-gray-300 focus:border-blue-500 pb-1 transition-colors"
+            placeholder="在此处添加计划备注"
+            value={item.notes || ''}
+            onChange={(e) => setItems(prev => prev.map(i => i.id === item.id ? { ...i, notes: e.target.value } : i))}
+          />
+        </div>
         
         <div className="flex flex-wrap items-center gap-4 px-4 ml-12 mb-4">
           <div 

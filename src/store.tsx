@@ -91,7 +91,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         // 1. Try to load from IndexedDB first for "Instant Start"
         const cached = await getCachedStandardExercises();
-        if (cached && cached.length > 0) {
+        if (cached && cached.length > 0 && Array.isArray(cached[0].aliases)) {
           const mapApiCategory = (c: string, b?: string) => {
             const cat = String(c || '').toLowerCase();
             const body = String(b || '').toLowerCase();
@@ -116,13 +116,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             equipment: (typeof ex.equipment === 'object' ? (ex.equipment?.zh || ex.equipment?.en) : ex.equipment) || '其他',
             primaryMuscle: (typeof ex.primaryMuscle === 'object' ? (ex.primaryMuscle?.zh || ex.primaryMuscle?.en) : ex.primaryMuscle) || '其他',
             secondaryMuscles: Array.isArray(ex.secondaryMuscles) ? ex.secondaryMuscles.map((m: any) => typeof m === 'object' ? (m.zh || m.en) : m) : [],
-            type: inferExerciseType((typeof ex.name === 'object' ? (ex.name?.zh || ex.name?.en) : ex.name) || '', (typeof ex.equipment === 'object' ? (ex.equipment?.zh || ex.equipment?.en) : ex.equipment) || '其他')
+            type: ['weight_reps', 'reps_only', 'weighted_bodyweight', 'assisted_bodyweight', 'time', 'time_weight', 'distance_time', 'weight_distance'].includes(ex.type) ? ex.type : inferExerciseType((typeof ex.name === 'object' ? (ex.name?.zh || ex.name?.en) : ex.name) || '', (typeof ex.equipment === 'object' ? (ex.equipment?.zh || ex.equipment?.en) : ex.equipment) || '其他'),
+            aliases: Array.isArray(ex.aliases) ? ex.aliases : [],
+            instructions: ex.instructions?.zh || ex.instructions?.en || ex.instructions || ''
           }));
           setStandardExercises(sanitized);
         }
 
-        // 2. Fetch from server ONLY if cache is empty or we are forced to
-        if (!cached || cached.length === 0) {
+        // 2. Fetch from server ONLY if cache is empty, we are forced to, or aliases are missing
+        if (!cached || cached.length === 0 || !Array.isArray(cached[0]?.aliases)) {
           const res = await fetch('/api/exercises');
           const data = await res.json();
           
@@ -184,14 +186,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               return muscle || '其他';
             };
 
-            const mapped = data.map(ex => ({
+            const mapped = data.map((ex: any) => ({
               ...ex,
               name: ex.name?.zh || ex.name?.en || ex.name || '',
               category: ex.category?.zh || ex.category?.en || mapApiCategory(ex.category || ex.body_part, ex.body_part),
               equipment: ex.equipment?.zh || ex.equipment?.en || ex.equipment || '其他',
               primaryMuscle: mapMuscleTranslation(ex.target || ex.body_part),
               secondaryMuscles: ex.secondary_muscles?.map((m: any) => mapMuscleTranslation(m)) || [],
-              type: inferExerciseType(ex.name?.zh || ex.name?.en || ex.name || '', ex.equipment?.zh || ex.equipment?.en || ex.equipment || '其他'),
+              type: ['weight_reps', 'reps_only', 'weighted_bodyweight', 'assisted_bodyweight', 'time', 'time_weight', 'distance_time', 'weight_distance'].includes(ex.type) ? ex.type : inferExerciseType(ex.name?.zh || ex.name?.en || ex.name || '', ex.equipment?.zh || ex.equipment?.en || ex.equipment || '其他'),
+              aliases: Array.isArray(ex.aliases) ? ex.aliases : [],
+              instructions: ex.instructions?.zh || ex.instructions?.en || ex.instructions || '',
               media: ex.image,
               videoUrl: ex.gif_url
             }));
@@ -243,24 +247,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const mergedExercisesMap = new Map<string, Exercise>();
     
     // Merge Strategy: 
-    // Key = Name + Equipment (most unique human-readable pair)
+    // Key = ID
     // Preference: Custom > Standard > Preset
     
+    let tempIdGen = 0;
+
     // 1. Presets
     defaultExercises.forEach(ex => {
-      const key = `${ex.name}_${ex.equipment}`;
+      const key = ex.id || `preset_${tempIdGen++}`;
       mergedExercisesMap.set(key, ex);
     });
 
     // 2. Standard exercises from server/IndexedDB
     standardExercises.forEach(ex => {
-      const key = `${ex.name}_${ex.equipment}`;
+      const key = ex.id || `std_${tempIdGen++}`;
       mergedExercisesMap.set(key, ex);
     });
     
     // 3. Custom exercises overwrite ALL
     customExercises.forEach(ex => {
-      const key = `${ex.name}_${ex.equipment}`;
+      const key = ex.id || `custom_${tempIdGen++}`;
       const overriden = mergedExercisesMap.has(key);
       mergedExercisesMap.set(key, { ...ex, isStandardOverride: overriden });
     });

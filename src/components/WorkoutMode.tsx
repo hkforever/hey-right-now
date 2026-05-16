@@ -572,6 +572,12 @@ export default function WorkoutMode() {
           </div>
         </div>
         
+        {ex?.instructions && (
+          <div className="text-[11px] text-gray-500 px-4 ml-[60px] mb-3 leading-relaxed pr-4">
+            {ex.instructions}
+          </div>
+        )}
+        
         <div className="flex flex-wrap items-center gap-2 px-4 ml-[60px] mb-4 pr-4">
           <div 
             onClick={() => setActiveRestTimerId(item.id)}

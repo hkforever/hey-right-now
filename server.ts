@@ -33,11 +33,28 @@ async function startServer() {
   app.get("/api/exercises", (req, res) => {
     try {
       const sourcePath = path.join(process.cwd(), SOURCE_FILE);
+      const aliasesPath = path.join(process.cwd(), 'aliases.json');
+      
+      let aliasesMap: Record<string, string[]> = {};
+      if (fs.existsSync(aliasesPath)) {
+        aliasesMap = JSON.parse(fs.readFileSync(aliasesPath, 'utf8'));
+      }
+
       if (!fs.existsSync(sourcePath)) {
         return res.json([]);
       }
       const exercises = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
-      res.json(exercises);
+      
+      const mergedExercises = exercises.map((ex: any) => {
+        const fileAliases = Array.isArray(ex.aliases) ? ex.aliases : [];
+        const extraAliases = aliasesMap[ex.id] || [];
+        return {
+          ...ex,
+          aliases: Array.from(new Set([...fileAliases, ...extraAliases]))
+        };
+      });
+      
+      res.json(mergedExercises);
     } catch (err: any) {
       console.error("[Server] Exercises fetch error:", err);
       res.status(500).json({ error: err.message });
